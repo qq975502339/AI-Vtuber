@@ -7,9 +7,9 @@
   },
   "api_ip": "127.0.0.1",
   "api_port": 8082,
-  "platform": "talk",
+  "platform": "wxlive",
   "room_display_id": "278333",
-  "chat_type": "reread",
+  "chat_type": "chatgpt",
   "need_lang": "none",
   "before_prompt": "请简要回复:",
   "after_prompt": "",
@@ -34,12 +34,12 @@
       "version": "V0.1.x",
       "api_ip_port": "http://127.0.0.1:8100",
       "type": [
-        "comment_reply", 
-        "idle_time_task", 
-        "entrance_reply", 
-        "follow_reply", 
-        "gift_reply", 
-        "reread", 
+        "comment_reply",
+        "idle_time_task",
+        "entrance_reply",
+        "follow_reply",
+        "gift_reply",
+        "reread",
         "schedule"
       ],
       "trigger_position": [
@@ -300,20 +300,20 @@
     "name": "Hiyori"
   },
   "openai": {
-    "api": "https://api.openai.com/v1",
+    "api": "https://api.deepseek.com/v1",
     "api_key": [
-      "api-key"
+      "sk-your-deepseek-api-key"
     ]
   },
   "chatgpt": {
-    "model": "gpt-3.5-turbo-0613",
+    "model": "deepseek-chat",
     "temperature": 0.9,
     "max_tokens": 4096,
     "top_p": 1.0,
     "presence_penalty": 0.0,
     "frequency_penalty": 0.0,
     "preset": "请扮演一个AI虚拟主播。不要回答任何敏感问题！不要强调你是主播，只需要回答问题！",
-    "stream": true
+    "stream": false
   },
   "gpt4free": {
     "provider": "",
@@ -771,7 +771,7 @@
     "model": "F5-TTS",
     "remove_silence": false,
     "cross_fade_duration": 0.15,
-    "speed": 1
+    "speed": 1.0
   },
   "multitts": {
     "api_ip_port": "http://192.168.31.180:8774",
@@ -791,7 +791,7 @@
     "sdp_ratio": 0.2,
     "noise_scale": 0.6,
     "noise_scale_w": 0.8,
-    "speed": 1
+    "speed": 1.0
   },
   "index_tts": {
     "api_ip_port": "http://127.0.0.1:6008",
@@ -968,7 +968,7 @@
     "model": "gemini",
     "img_save_path": "./out/图像识别",
     "prompt": "请讲解一下图片里的内容",
-    "screenshot_window_title": null,
+    "screenshot_window_title": "None",
     "screenshot_delay": 3.0,
     "loop_screenshot_enable": false,
     "loop_screenshot_delay": 15,
@@ -1234,15 +1234,15 @@
         ],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [
-          "data/闲时任务/音频/ikaros/主人，你刚才是不是说我们会永远在一起.wav",
-          "data/闲时任务/音频/ikaros/好想赶快见到主人.wav"
-        ],
         "img_path": [
           "ui/bg.png",
           "ui/icon.png",
           "C:/Users/Administrator/Pictures/aivtb/1.png",
           "C:/Users/Administrator/Pictures/aivtb/2.png"
+        ],
+        "local_audio": [
+          "data/闲时任务/音频/ikaros/主人，你刚才是不是说我们会永远在一起.wav",
+          "data/闲时任务/音频/ikaros/好想赶快见到主人.wav"
         ]
       },
       {
@@ -1263,8 +1263,8 @@
         ],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1300,8 +1300,8 @@
         ],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1329,8 +1329,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1359,8 +1359,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1377,8 +1377,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1396,8 +1396,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1427,8 +1427,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1443,8 +1443,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1459,8 +1459,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       },
       {
         "keywords": [
@@ -1477,8 +1477,8 @@
         "copywriting": [],
         "serial_name": "",
         "serial_send_data": [],
-        "local_audio": [],
-        "img_path": []
+        "img_path": [],
+        "local_audio": []
       }
     ]
   },
@@ -1717,7 +1717,7 @@
   },
   "webui": {
     "ip": "127.0.0.1",
-    "port": 8081,
+    "port": 18081,
     "title": "AI Vtuber",
     "auto_run": false,
     "local_dir_to_endpoint": {

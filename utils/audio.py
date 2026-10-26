@@ -7,7 +7,8 @@ import os, random
 import copy
 import traceback
 
-from elevenlabs import generate, play, set_api_key
+# elevenlabs 0.2.8 使用 pydantic v1 语法，与 pydantic v2 环境不兼容，改为在使用处延迟导入
+# from elevenlabs import generate, play, set_api_key
 
 from pydub import AudioSegment
 
@@ -983,6 +984,8 @@ class Audio:
                 # 调用接口合成语音
                 voice_tmp_path = await self.my_tts.edge_tts_api(data)
             elif message["tts_type"] == "elevenlabs":
+                from elevenlabs import generate, play, set_api_key
+
                 # 如果配置了密钥就设置上0.0
                 if message["data"]["api_key"] != "":
                     set_api_key(message["data"]["api_key"])

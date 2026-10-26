@@ -1,7 +1,12 @@
 import json, traceback
 
-from xingchen import Configuration, ApiClient, ChatApiSub, ChatReqParams, CharacterKey, Message, UserProfile, \
-    ModelParameters, ChatHistoryQueryDTO, ChatHistoryQueryWhere
+try:
+    from xingchen import Configuration, ApiClient, ChatApiSub, ChatReqParams, CharacterKey, Message, UserProfile, \
+        ModelParameters, ChatHistoryQueryDTO, ChatHistoryQueryWhere
+except Exception:
+    # xingchen 1.1.5 基于 pydantic v1，在 pydantic v2 环境下无法导入，延迟到实际选用时再报错
+    Configuration = ApiClient = ChatApiSub = ChatReqParams = CharacterKey = Message = UserProfile = None
+    ModelParameters = ChatHistoryQueryDTO = ChatHistoryQueryWhere = None
 
 from utils.my_log import logger
 
@@ -9,6 +14,8 @@ from utils.my_log import logger
 
 class TongYiXingChen:
     def __init__(self, data):
+        if Configuration is None:
+            raise RuntimeError("通义星尘(xingchen) SDK 与当前 pydantic v2 环境不兼容，无法使用该LLM，请选择其他LLM类型")
         # self.common = Common()
         # # 日志文件路径
         # file_path = "./log/log-" + self.common.get_bj_time(1) + ".txt"

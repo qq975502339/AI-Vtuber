@@ -8,6 +8,12 @@ from .my_log import logger
 from .config import Config
 from .db import SQLiteDB
 
+# 数据库不存在或查询异常时返回的空图表配置，避免 ui.echart 收到 None 导致页面崩溃
+EMPTY_ECHART_OPTION = {
+    'title': {'text': '暂无数据', 'left': 'center'},
+    'series': []
+}
+
 
 class Data_Analysis:
     def __init__(self, config_path):
@@ -79,7 +85,7 @@ class Data_Analysis:
         try:
             if not os.path.exists(self.config.get('database', 'path')):
                 logger.warning(f"数据库：{self.config.get('database', 'path')} 不存在，如果您是第一次启动项目，且没有 运行的情况下，那么请忽略此报错信息，正常运行后，会自动创建数据库，无须担心")
-                return None
+                return EMPTY_ECHART_OPTION
 
             db = SQLiteDB(self.config.get('database', 'path'))
 
@@ -131,7 +137,7 @@ class Data_Analysis:
             return option
         except Exception as e:
             logger.error(traceback.format_exc())
-            return None
+            return EMPTY_ECHART_OPTION
 
 
     def get_integral_option(self, type="integral", top_num=10):
@@ -147,7 +153,7 @@ class Data_Analysis:
         try:
             if not os.path.exists(self.config.get('database', 'path')):
                 logger.warning(f"数据库：{self.config.get('database', 'path')} 不存在，如果您是第一次启动项目，且没有 运行的情况下，那么请忽略此报错信息，正常运行后，会自动创建数据库，无须担心")
-                return None
+                return EMPTY_ECHART_OPTION
             
             db = SQLiteDB(self.config.get('database', 'path'))
 
@@ -296,7 +302,7 @@ class Data_Analysis:
             return option
         except Exception as e:
             logger.error(traceback.format_exc())
-            return None
+            return EMPTY_ECHART_OPTION
         
 
     def get_gift_option(self, top_num=10):
@@ -311,7 +317,7 @@ class Data_Analysis:
         try:
             if not os.path.exists(self.config.get('database', 'path')):
                 logger.warning(f"数据库：{self.config.get('database', 'path')} 不存在，如果您是第一次启动项目，且没有 运行的情况下，那么请忽略此报错信息，正常运行后，会自动创建数据库，无须担心")
-                return None
+                return EMPTY_ECHART_OPTION
             
             db = SQLiteDB(self.config.get('database', 'path'))
 
@@ -380,4 +386,4 @@ class Data_Analysis:
             return option
         except Exception as e:
             logger.error(traceback.format_exc())
-            return None
+            return EMPTY_ECHART_OPTION
