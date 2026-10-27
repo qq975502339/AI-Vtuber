@@ -1,0 +1,9 @@
+host: 127.0.0.1
+port: 8765
+game_bridge_token: CHANGE_ME
+project_send_url: http://127.0.0.1:9550/send
+project_username: Person
+persona_dir: personas
+llm_base_url: http://127.0.0.1:11434/v1
+llm_model: CHANGE_ME
+llm_api_key: CHANGE_ME
