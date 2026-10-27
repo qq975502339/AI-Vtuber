@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from person_sidecar.adapters.game_gateway import GameGateway
 from person_sidecar.adapters.project_speaker import ProjectSpeaker
@@ -58,7 +58,10 @@ def create_app(settings: Settings, runtime: PersonRuntime) -> FastAPI:
 
     @app.post("/personas/{persona_id}/activate")
     async def activate_persona(persona_id: str) -> dict[str, str]:
-        runtime.switch_persona(persona_id)
+        try:
+            runtime.switch_persona(persona_id)
+        except KeyError:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown persona id: {persona_id}")
         return {"persona_id": runtime.state.persona_id}
 
     @app.websocket("/ws/game/{game_id}")
@@ -67,8 +70,7 @@ def create_app(settings: Settings, runtime: PersonRuntime) -> FastAPI:
         if token != settings.game_bridge_token:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        gateway: GameGateway = runtime._game_gateway
-        gateway.bind_sender(websocket.send_json)
+        connection_id = runtime.bind_game_sender(websocket.send_json)
         received_first_state = False
         try:
             while True:
@@ -86,8 +88,12 @@ def create_app(settings: Settings, runtime: PersonRuntime) -> FastAPI:
                 else:
                     await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
                     return
-        except (WebSocketDisconnect, ValueError):
-            gateway.disconnect(game_id)
+        except ValueError:
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            runtime.disconnect_game(game_id, connection_id)
 
     return app
 

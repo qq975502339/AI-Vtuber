@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import uuid4
 
 from person_sidecar.models import GameAction, GameActionName, GameState
 
@@ -18,6 +19,7 @@ class GameGateway:
         self._send_json = send_json
         self._state: GameState | None = None
         self._submitted_round_id: str | None = None
+        self._connection_id = str(uuid4()) if send_json is not None else None
 
     @property
     def state(self) -> GameState | None:
@@ -27,18 +29,38 @@ class GameGateway:
     def connected(self) -> bool:
         return self._send_json is not None
 
-    def bind_sender(self, send_json: SendJson) -> None:
+    def bind_sender(self, send_json: SendJson) -> str:
+        connection_id = str(uuid4())
         self._send_json = send_json
+        self._connection_id = connection_id
+        return connection_id
 
-    def accept_state(self, state: GameState) -> None:
-        if self._state is None or state.round_id != self._state.round_id:
+    @property
+    def connection_id(self) -> str | None:
+        return self._connection_id
+
+    def accept_state(self, state: GameState) -> bool:
+        current = self._state
+        if (
+            current
+            and state.game_id == current.game_id
+            and state.round_id == current.round_id
+            and state.revision < current.revision
+        ):
+            return False
+        if current is None or (state.game_id, state.round_id) != (current.game_id, current.round_id):
             self._submitted_round_id = None
         self._state = state
+        return True
 
-    def disconnect(self, game_id: str) -> None:
+    def disconnect(self, game_id: str, connection_id: str | None) -> bool:
+        if self._connection_id != connection_id:
+            return False
         if self._state and self._state.game_id == game_id:
             self._state = None
         self._send_json = None
+        self._connection_id = None
+        return True
 
     def validate_action(self, action: GameAction) -> None:
         state = self._state

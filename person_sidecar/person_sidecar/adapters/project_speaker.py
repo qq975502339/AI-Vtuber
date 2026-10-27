@@ -33,5 +33,5 @@ class ProjectSpeaker:
                     return SpeakResult(ok=response.is_success, status_code=response.status_code)
                 last_error = f"server returned {response.status_code}"
             except httpx.TransportError as exc:
-                last_error = str(exc)
+                return SpeakResult(ok=False, error=str(exc))
         return SpeakResult(ok=False, error=last_error or "speech request failed")

@@ -54,6 +54,14 @@ class PersonRuntime:
     def game_connected(self) -> bool:
         return self._game_gateway.connected
 
+    def bind_game_sender(self, send_json) -> str:
+        return self._game_gateway.bind_sender(send_json)
+
+    def disconnect_game(self, game_id: str, connection_id: str | None) -> None:
+        if self._game_gateway.disconnect(game_id, connection_id):
+            if self.state.game_state and self.state.game_state.game_id == game_id:
+                self.state.game_state = None
+                self.state.candidate_answers.clear()
     @property
     def audit(self) -> tuple[ExecutionResult, ...]:
         return tuple(self._audit)
@@ -82,8 +90,12 @@ class PersonRuntime:
     def _reduce(self, event: Event) -> None:
         if event.type == "game.state":
             state = GameState.model_validate(event.payload)
+            previous = self.state.game_state
+            if not self._game_gateway.accept_state(state):
+                return
+            if previous is None or (state.game_id, state.round_id, state.revision) != (previous.game_id, previous.round_id, previous.revision) or state.phase != "answering":
+                self.state.candidate_answers.clear()
             self.state.game_state = state
-            self._game_gateway.accept_state(state)
             return
         if event.type == "chat.message":
             message = ChatMessage.model_validate(event.payload)
@@ -97,6 +109,13 @@ class PersonRuntime:
     async def _execute(self, decision, persona) -> ExecutionResult | None:
         if decision.intent == "wait":
             return None
+        game_tools = {"submit_answer", "select_option", "request_hint", "next_round"}
+        if (decision.intent == "reply" and decision.tool_name != "speak") or (
+            decision.intent == "game_action" and decision.tool_name not in game_tools
+        ):
+            result = ExecutionResult(decision.tool_name, "rejected", "intent and tool do not match")
+            self._audit.append(result)
+            return result
         if decision.tool_name not in persona.allowed_tools:
             result = ExecutionResult(decision.tool_name, "rejected", "tool is not allowed for active persona")
             self._audit.append(result)
