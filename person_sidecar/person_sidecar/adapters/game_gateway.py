@@ -53,6 +53,10 @@ class GameGateway:
         self._state = state
         return True
 
+    def reset_session(self) -> None:
+        """Keep the live bridge and current state, but forget Person-session actions."""
+        self._submitted_round_id = None
+
     def disconnect(self, game_id: str, connection_id: str | None) -> bool:
         if self._connection_id != connection_id:
             return False

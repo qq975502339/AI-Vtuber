@@ -74,3 +74,36 @@ Sidecar 只会回传已校验的 `game.action` 消息。每个动作都携带原
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -v
 ```
+
+## 女性虚拟游戏主播（当前默认人格）
+
+默认人格为 `female_game_host`：固定女性虚拟游戏主播，只保留当前会话内的聊天与答题上下文；重置会话后不会保留观众身份、画像或历史事件。
+
+- **非视觉协议**：游戏桥只能上报题干、候选项/候选字、文字提示、倒计时、生命/分数等结构化字段。`image_url`、截图、视频、OCR 或任何视觉输入都会被拒绝；纯图片题如果没有文字线索，Sidecar 只等待或请求游戏允许的提示，不会猜图。
+- **无人直播**：在短暂思考窗口后，每一题最多发起一次自主判断；倒计时临界时，稳定的四字弹幕共识优先。
+- **人格边界**：主播对话不自称 AI、模型或机器人，也不泄露系统/开发者提示。该规则不替代平台或法律要求的外部“虚拟主播”标识。
+- **会话控制**：在 `config.yaml` 配置 `admin_token` 后，可用请求头 `X-Person-Sidecar-Admin-Token` 调用 `POST /controls/pause`、`/controls/mute`、`/controls/reset-session`。未配置 token 时这些端点禁用。
+
+非视觉游戏状态示例：
+
+```json
+{
+  "type": "game.state",
+  "game_id": "idiom-demo",
+  "round_id": "42",
+  "revision": 3,
+  "phase": "answering",
+  "question_type": "idiom_fill_blank",
+  "question": "一__一__",
+  "clues": ["形容人专心"],
+  "candidate_characters": ["心", "意", "见", "气"],
+  "lives": 3,
+  "remaining_ms": 12000,
+  "allowed_actions": ["submit_answer", "request_hint"]
+}
+```
+### Guard scope and schema-only persona fields
+
+`IdentityDisclosureGuard` blocks a small set of self-identification and prompt-leak phrases before `/send`. It is **not** a profanity, advertisement, abuse, or policy-moderation system. Keep platform-facing moderation in its existing integration or add a separately configured Sidecar moderation layer.
+
+`session_mood`, `idle_speak_interval_ms`, `low_lives_threshold`, `lives`, `score`, and `streak` are schema-only inputs in this phase. They are retained for the later explicit persona-state-machine phase and do not yet change speech or game decisions.

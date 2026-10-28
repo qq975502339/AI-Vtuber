@@ -83,3 +83,19 @@ def test_game_websocket_accepts_full_state() -> None:
                     "allowed_actions": ["submit_answer"],
                 }
             )
+
+
+def test_game_bridge_parser_rejects_malformed_action_result() -> None:
+    from person_sidecar.app import parse_game_bridge_message
+
+    with pytest.raises(ValueError):
+        parse_game_bridge_message(
+            {
+                "type": "game.action_result",
+                "game_id": "idiom-demo",
+                "round_id": "42",
+                "revision": 1,
+                "status": "rejected",
+            },
+            received_first_state=True,
+        )

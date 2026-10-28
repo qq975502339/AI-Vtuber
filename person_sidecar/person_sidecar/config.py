@@ -14,6 +14,8 @@ class Settings(BaseModel):
     project_send_url: str
     project_username: str = "Person"
     persona_dir: Path = Path("personas")
+    default_persona_id: str = "female_game_host"
+    admin_token: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_api_key: str | None = None
@@ -24,6 +26,7 @@ class Settings(BaseModel):
         for env_name, field_name in (
             ("PERSON_SIDECAR_GAME_BRIDGE_TOKEN", "game_bridge_token"),
             ("PERSON_SIDECAR_LLM_API_KEY", "llm_api_key"),
+            ("PERSON_SIDECAR_ADMIN_TOKEN", "admin_token"),
         ):
             value = os.getenv(env_name)
             if value:

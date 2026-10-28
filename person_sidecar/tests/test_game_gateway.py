@@ -54,3 +54,23 @@ async def test_gateway_rejects_stale_revision(state: GameState) -> None:
 
     with pytest.raises(StaleOrDuplicateAction, match="stale"):
         await gateway.send(stale_action)
+
+
+@pytest.mark.asyncio
+async def test_gateway_session_reset_keeps_connection_and_allows_resubmit(state: GameState) -> None:
+    sent: list[dict] = []
+
+    async def send_json(payload: dict) -> None:
+        sent.append(payload)
+
+    gateway = GameGateway(send_json)
+    gateway.accept_state(state)
+    action = GameAction.for_state(state, "submit_answer", {"answer": "一心一意"})
+    await gateway.send(action)
+
+    gateway.reset_session()
+    await gateway.send(action)
+
+    assert gateway.connected is True
+    assert gateway.state == state
+    assert len(sent) == 2

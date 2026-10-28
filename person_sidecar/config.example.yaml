@@ -4,6 +4,9 @@ game_bridge_token: CHANGE_ME
 project_send_url: http://127.0.0.1:9550/send
 project_username: Person
 persona_dir: personas
+default_persona_id: female_game_host
+# Leave empty to keep /controls endpoints disabled; set a random local token to enable them.
+admin_token: CHANGE_ME_TO_A_RANDOM_LOCAL_TOKEN
 llm_base_url: http://127.0.0.1:11434/v1
 llm_model: CHANGE_ME
 llm_api_key: CHANGE_ME

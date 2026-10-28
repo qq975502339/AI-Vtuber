@@ -72,6 +72,7 @@ def runtime() -> PersonRuntime:
 async def test_deadline_answer_beats_normal_chat(runtime: PersonRuntime, answer_state: GameState) -> None:
     await runtime.publish(Event.game_state(answer_state))
     await runtime.publish(Event.chat(ChatMessage(platform="test", user_id="u1", username="观众", content="一心一意")))
+    await runtime.publish(Event.chat(ChatMessage(platform="test", user_id="u2", username="观众2", content="一心一意")))
 
     results = await runtime.drain_once()
 

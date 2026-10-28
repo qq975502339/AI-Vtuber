@@ -16,6 +16,10 @@ class Persona(BaseModel):
     reply_cooldown_ms: int = Field(default=3000, ge=0)
     max_speak_chars: int = Field(default=72, ge=1, le=300)
     prefer_audience_answers: bool = True
+    autonomy_think_ms: int = Field(default=1200, ge=0)
+    idle_speak_interval_ms: int = Field(default=30000, ge=0)
+    low_lives_threshold: int = Field(default=1, ge=0)
+    session_mood: str = Field(default="focused", min_length=1, max_length=32)
     allowed_tools: frozenset[str] = frozenset({"speak"})
 
 
