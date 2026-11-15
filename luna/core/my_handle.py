@@ -2453,6 +2453,12 @@ class My_handle(metaclass=SingletonMeta):
             # 输出当前用户发送的弹幕消息
             logger.debug(f"[{username}]: {content}")
 
+            # 游戏模式：弹幕交给 GameBridge（投票），默认回复让路
+            if is_comment:
+                game_bridge = getattr(self, "game_bridge", None)
+                if game_bridge is not None and game_bridge.on_comment(data):
+                    return None
+
             # 限定时间数据去重（仅弹幕）
             if is_comment and self.is_data_repeat_in_limited_time("comment", data):
                 return None
@@ -3380,6 +3386,13 @@ class My_handle(metaclass=SingletonMeta):
     """
 
     def process_data(self, data, timer_flag):
+        # 游戏模式：弹幕在进入定时器/长度/黑名单过滤前直接交给 GameBridge，
+        # 否则单字投票（如“京”）会被过滤器丢掉，桥只能看到长评论。
+        if timer_flag == "comment":
+            game_bridge = getattr(self, "game_bridge", None)
+            if game_bridge is not None and game_bridge.on_comment(data):
+                return
+
         with self.data_lock:
             if timer_flag not in self.timers or not self.timers[timer_flag].is_alive():
                 self.timers[timer_flag] = threading.Timer(

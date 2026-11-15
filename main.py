@@ -17,6 +17,7 @@ from app.static_server import start_static_server
 from app.state import AppState
 from app.voice_chat import VoiceChat
 from luna.core.my_handle import My_handle
+from luna.game.bridge import GameBridge
 from luna.infra.my_log import logger
 from luna.platforms import start_platform_listen
 import luna.infra.my_global as my_global
@@ -102,5 +103,13 @@ if __name__ == "__main__":
     if state.my_handle is None:
         logger.error("程序初始化失败！")
         os._exit(0)
+
+    # 游戏直播桥：Game1 的 state/action/event/cmd（规则版，先接模板 TTS）
+    try:
+        game_bridge = GameBridge(state.my_handle)
+        state.my_handle.game_bridge = game_bridge
+        game_bridge.start()
+    except Exception:
+        logger.error(f"游戏桥启动失败：\n{traceback.format_exc()}")
 
     start_server(state)

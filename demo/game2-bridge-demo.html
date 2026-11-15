@@ -184,8 +184,8 @@
       <button class="seg" data-speed="4">4×</button>
       <select id="paceSelect" title="每个字的投票窗口">
         <option value="fast">快 3s/字</option>
-        <option value="normal" selected>标准 5s/字</option>
-        <option value="slow">慢 7s/字</option>
+        <option value="normal">标准 5s/字</option>
+        <option value="slow" selected>慢 10s/字</option>
       </select>
       <select id="modeSelect" title="玩法模式">
         <option value="audience">观众猜五字</option>
@@ -286,7 +286,7 @@
       <div class="tab-panel" id="tab-fsm">
         <div class="fsm">
           <div class="fsm-row"><b>STATE</b><span>游戏发来：5 个字的笔画总数/已露笔数、40 个候选字（5 组 × 8）、当前投到第几个字、历史。答案不在消息里。</span></div>
-          <div class="fsm-row"><b>WINDOW</b><span>每个字单独开一个 3/5/7 秒窗口，观众从当前字的 8 个候选里投一个字；5 个字都投完再提交。</span></div>
+          <div class="fsm-row"><b>WINDOW</b><span>每个字单独开一个 3/5/10 秒窗口，观众从当前字的 8 个候选里投一个字；5 个字都投完再提交。</span></div>
           <div class="fsm-row"><b>PICK</b><span>主播兜底：当前字 ≥2 个不同人、且占比 ≥30% 才听观众的；否则用推导话术里的 hostGuess（玩家脑）。</span></div>
           <div class="fsm-row"><b>COMMIT</b><span>把选中的字填进当前格；5 个都填完后一次提交 5 个字。</span></div>
           <div class="fsm-row"><b>JUDGE</b><span>ack 返回 pct；100% 通关，否则进入下一轮、多露一点笔画，重新逐字投。</span></div>
@@ -338,14 +338,14 @@
   const PACES = {
     fast: { sec: 3, buffer: 0.6 },
     normal: { sec: 5, buffer: 0.9 },
-    slow: { sec: 7, buffer: 1.2 },
+    slow: { sec: 10, buffer: 1.5 },
   };
   const NAMES = ["三哥", "阿茶", "晚风", "柚子", "不吃香菜", "9527", "路过的", "小陈", "木木", "老白", "momo", "小满的猫"];
   const NOISE = ["666", "主播加油", "？", "再想想", "这个字好难", "哈哈哈哈"];
   const ABORT = Symbol("abort");
 
   const state = {
-    gen: 0, running: false, speed: 1, pace: "normal", mode: "audience", policy: "host",
+    gen: 0, running: false, speed: 1, pace: "slow", mode: "audience", policy: "host",
     levelIdx: 0, level: null, attempt: 0, slotIndex: 0, maxAttempts: MAX_ATTEMPTS,
     slots: [null, null, null, null, null], candidates: [], orders: {},
     revealAll: false, success: false, history: [], votes: [], votedUsers: new Set(),

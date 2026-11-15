@@ -48,6 +48,8 @@ class Audio:
         self.message_queue = []
         self.message_queue_lock = threading.Lock()
         self.message_queue_not_empty = threading.Condition(lock=self.message_queue_lock)
+        # 是否正在合成（消息已出队、音频还没进播放队列）
+        self.is_synthesizing = False
         # 待播放音频路径队列
         self.voice_tmp_path_queue = []
         self.voice_tmp_path_queue_lock = threading.Lock()
@@ -181,6 +183,9 @@ class Audio:
           那个服务只暴露 play/pause/resume/skip/get_list/clear，没有「在不在播」，
           所以只能退化成看队列（外加外接项目报回来的 wait_play_audio_num）。
         """
+        if getattr(self, "is_synthesizing", False):
+            return True
+
         if len(self.message_queue) or len(self.voice_tmp_path_queue):
             return True
 
@@ -1128,6 +1133,13 @@ class Audio:
 
     # 合成音频并插入待播放队列
     async def my_play_voice(self, message):
+        self.is_synthesizing = True
+        try:
+            return await self._my_play_voice_impl(message)
+        finally:
+            self.is_synthesizing = False
+
+    async def _my_play_voice_impl(self, message):
         """合成音频并插入待播放队列
 
         Args:
@@ -1140,7 +1152,7 @@ class Audio:
 
         try:
             # 如果是tts类型为none，暂时这类为直接播放音频，所以就丢给路径队列
-            if message["tts_type"] == "none":
+            if message.get("tts_type", "none") == "none":
                 self.data_priority_insert("待播放音频列表", message)
                 return
         except Exception:
@@ -1166,7 +1178,7 @@ class Audio:
         # 判断消息类型，再变声并封装数据发到队列 减少冗余
         async def voice_change_and_put_to_queue(message, voice_tmp_path):
             # 拼接json数据，存入队列
-            data_json = {"type": message["type"], "voice_path": voice_tmp_path, "content": message["content"]}
+            data_json = build_playback(message, voice_tmp_path)
 
             if "insert_index" in message:
                 data_json["insert_index"] = message["insert_index"]
