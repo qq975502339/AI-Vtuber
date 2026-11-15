@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game1 × AI 主持人 · 中间层模拟器</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: rgba(255,255,255,.035);
+    --line: rgba(255,255,255,.09);
+    --text: #e6edf5;
+    --muted: #8494a8;
+    --cyan: #5eead4;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --green: #34d399;
+    --violet: #a78bfa;
+    --blue: #60a5fa;
+    --pink: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(94,234,212,.10), transparent 60%),
+      radial-gradient(800px 500px at 95% 0%, rgba(251,191,36,.08), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 1560px; margin: 0 auto; padding: 18px 20px 28px; }
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(135deg, rgba(94,234,212,.22), rgba(251,191,36,.16));
+    border: 1px solid rgba(94,234,212,.3); font-size: 21px;
+  }
+  h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: .3px; }
+  .sub { font-size: 11.5px; color: var(--muted); }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--red); font-size: 11px; margin-left: 8px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 0 rgba(248,113,113,.6); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(248,113,113,0); } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); } }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg, .btn, select {
+    background: rgba(255,255,255,.045); color: var(--text); border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .seg:hover, .btn:hover, select:hover { border-color: rgba(94,234,212,.45); }
+  .seg.on { background: rgba(94,234,212,.14); border-color: rgba(94,234,212,.55); color: var(--cyan); }
+  .btn.primary { background: rgba(251,191,36,.15); border-color: rgba(251,191,36,.5); color: var(--amber); }
+  .grid { display: grid; grid-template-columns: 390px minmax(300px, 1fr) 430px; gap: 16px; align-items: start; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px;
+  }
+  /* ---------- phone ---------- */
+  .phone-wrap { position: sticky; top: 14px; }
+  .phone {
+    position: relative; height: 706px; border-radius: 30px; padding: 13px;
+    background: linear-gradient(180deg, #fdf8ee, #f1e5d1);
+    color: #2b2118; box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.6);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .notch { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 108px; height: 20px; border-radius: 0 0 14px 14px; background: #171310; z-index: 4; }
+  .phone-top { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #7a6750; margin: 14px 4px 8px; }
+  .phone-top b { color: #2b2118; font-size: 12px; }
+  .hearts { letter-spacing: 1px; font-size: 13px; }
+  .mode-badge {
+    font-size: 8px; padding: 2px 6px; border-radius: 999px; margin-left: 5px;
+    background: rgba(43,33,24,.07); color: #6b5a45; border: 1px solid rgba(43,33,24,.12);
+  }
+  .scene { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .idiom-card {
+    background: #fff; border-radius: 20px; padding: 11px 11px 9px;
+    box-shadow: 0 10px 24px rgba(120,90,50,.14); border: 1px solid rgba(160,130,90,.12);
+    transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .45s;
+  }
+  .idiom-card.leave { transform: translateY(-18px) scale(.96); opacity: 0; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; color: #9b876c; margin-bottom: 7px; }
+  .card-head b { color: #6b5a45; font-size: 10px; }
+  .elements { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+  .el {
+    position: relative; min-height: 108px; border-radius: 13px; background: #f8f2e7; border: 2px solid transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 5px 4px;
+    transition: border-color .25s, box-shadow .25s, opacity .25s;
+  }
+  .el .badge { position: absolute; top: 4px; left: 5px; font-size: 7.5px; letter-spacing: .4px; color: #a08a6c; text-transform: uppercase; }
+  .el .big { font-size: 30px; font-weight: 900; line-height: 1.1; color: #2b2118; }
+  .el .emoji { font-size: 34px; line-height: 1.15; }
+  .el .hint { font-size: 8.5px; color: #8a7458; line-height: 1.25; text-align: center; }
+  .el.active { border-color: #e8a33d; box-shadow: 0 0 0 4px rgba(232,163,61,.16); background: #fff8e9; }
+  .el.done { opacity: .42; filter: saturate(.5); }
+  .el.done::after { content: "✓"; position: absolute; right: 5px; top: 3px; font-size: 11px; color: #3f9a6d; font-weight: 800; }
+  .slots { display: flex; justify-content: center; gap: 8px; }
+  .slot {
+    width: 62px; height: 62px; border-radius: 13px; border: 2px dashed #cdb99a; background: rgba(255,255,255,.55);
+    display: grid; place-items: center; font-size: 27px; font-weight: 900; color: #2b2118; position: relative;
+    transition: border-color .2s, background .2s, transform .2s;
+  }
+  .slot.active { border-color: #e8a33d; background: #fff5df; animation: slotPulse 1.5s infinite; }
+  .slot.filled { border-style: solid; border-color: #e8a33d; background: #fff1d2; }
+  .slot.shake { animation: shake .42s; }
+  .slot.pop { animation: pop .35s; }
+  @keyframes slotPulse { 50% { box-shadow: 0 0 0 5px rgba(232,163,61,.12); } }
+  @keyframes shake { 20%,60% { transform: translateX(-5px); } 40%,80% { transform: translateX(5px); } }
+  @keyframes pop { 50% { transform: scale(1.14); } }
+  .pool-label { display: flex; justify-content: space-between; font-size: 9px; color: #9b876c; margin: 1px 3px -2px; }
+  .pool { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+  .tile {
+    height: 31px; border-radius: 8px; background: #fff; border: 1px solid #e8d8bf; display: grid; place-items: center;
+    font-size: 15px; font-weight: 700; color: #4a3b2a; transition: opacity .25s, transform .25s, background .25s;
+  }
+  .tile.used { opacity: .16; text-decoration: line-through; transform: scale(.94); }
+  .tile.flash { background: #fff0c9; animation: tileFlash .5s; }
+  @keyframes tileFlash { 50% { transform: scale(1.13); box-shadow: 0 0 0 3px rgba(232,163,61,.25); } }
+  .phone-foot { display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #9b876c; padding: 8px 4px 1px; }
+  .timer-wrap { position: absolute; left: 13px; right: 13px; bottom: 40px; z-index: 3; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .timer-wrap.show { opacity: 1; }
+  .timer-track { height: 6px; background: rgba(43,33,24,.12); border-radius: 999px; overflow: hidden; }
+  .timer-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #e8a33d, #f2c66d); border-radius: 999px; transition: width .1s linear; }
+  .timer-text { text-align: center; font-size: 10px; color: #7a6750; margin-bottom: 4px; font-weight: 700; }
+  .overlay {
+    position: absolute; inset: 0; z-index: 6; display: none; place-items: center; text-align: center;
+    background: rgba(40,30,20,.9); color: #fff; padding: 30px; backdrop-filter: blur(3px);
+  }
+  .overlay.show { display: grid; }
+  .overlay .big { font-size: 27px; font-weight: 900; letter-spacing: 1px; margin-bottom: 8px; }
+  .overlay .small { font-size: 12px; color: rgba(255,255,255,.7); line-height: 1.7; }
+  .overlay .tag { display: inline-block; margin-top: 12px; font-size: 10px; padding: 4px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); color: rgba(255,255,255,.85); }
+  .fly-ghost {
+    position: fixed; z-index: 999; display: grid; place-items: center; pointer-events: none;
+    background: #fff; border: 1px solid #e8d8bf; border-radius: 8px; font-size: 16px; font-weight: 800; color: #2b2118;
+    box-shadow: 0 8px 18px rgba(0,0,0,.25);
+  }
+  /* ---------- host ---------- */
+  .host-col { display: flex; flex-direction: column; gap: 14px; min-height: 706px; }
+  .host-head { display: flex; gap: 11px; align-items: center; }
+  .avatar {
+    width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; font-size: 23px;
+    background: linear-gradient(135deg, rgba(94,234,212,.25), rgba(96,165,250,.18)); border: 1px solid rgba(94,234,212,.35);
+  }
+  .host-name { font-size: 14px; font-weight: 700; }
+  .host-name span { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .host-mode { font-size: 10px; color: var(--cyan); margin-top: 3px; }
+  .speech {
+    min-height: 104px; max-height: 250px; overflow-y: auto; border-radius: 15px; padding: 14px 15px; font-size: 15px; line-height: 1.75;
+    background: linear-gradient(135deg, rgba(94,234,212,.10), rgba(251,191,36,.06));
+    border: 1px solid rgba(94,234,212,.22); position: relative;
+  }
+  .speech::before { content: "主播 · 林小满"; position: absolute; top: -9px; left: 13px; font-size: 9px; color: var(--cyan); background: #0d131b; padding: 0 5px; border-radius: 4px; }
+  .caret { display: inline-block; width: 7px; height: 15px; background: var(--cyan); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; opacity: .8; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .mood { display: grid; grid-template-columns: 54px 1fr 28px; gap: 7px 9px; align-items: center; font-size: 10px; color: var(--muted); }
+  .bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 999px; transition: width .4s; }
+  .bar.excite i { background: linear-gradient(90deg, #fbbf24, #f472b6); }
+  .bar.frust i { background: linear-gradient(90deg, #f87171, #fb7185); }
+  .bar.focus i { background: linear-gradient(90deg, #5eead4, #60a5fa); }
+  .mood b { color: var(--text); font-size: 10px; text-align: right; font-weight: 600; }
+  .chat-panel { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  .chat-title { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+  .chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 180px; max-height: 330px; padding-right: 3px; }
+  .chat::-webkit-scrollbar, .proto-log::-webkit-scrollbar { width: 5px; }
+  .chat::-webkit-scrollbar-thumb, .proto-log::-webkit-scrollbar-thumb { background: rgba(255,255,255,.13); border-radius: 99px; }
+  .chat-line { font-size: 12.5px; line-height: 1.55; background: rgba(255,255,255,.035); border-radius: 8px; padding: 5px 8px; animation: chatIn .22s ease-out; }
+  .chat-line.system { background: transparent; color: #7f8fa4; font-size: 10.5px; text-align: center; padding: 2px; }
+  .chat-line.mine { background: rgba(94,234,212,.09); }
+  .chat-name { color: var(--cyan); font-weight: 600; margin-right: 6px; }
+  .chat-line.mine .chat-name { color: var(--amber); }
+  @keyframes chatIn { from { opacity: 0; transform: translateY(4px); } }
+  .chat-form { display: flex; gap: 7px; }
+  .chat-form input {
+    flex: 1; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 9px;
+    color: var(--text); padding: 8px 11px; font-size: 12px; font-family: inherit; outline: none;
+  }
+  .chat-form input:focus { border-color: rgba(94,234,212,.5); }
+  /* ---------- protocol ---------- */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .metric { background: rgba(255,255,255,.035); border: 1px solid var(--line); border-radius: 10px; padding: 8px 9px; }
+  .metric span { display: block; font-size: 9px; color: var(--muted); margin-bottom: 3px; }
+  .metric b { font-size: 16px; font-weight: 700; letter-spacing: .2px; }
+  .metric b small { font-size: 9px; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 9px; }
+  .tab { flex: 1; text-align: center; font-size: 11px; padding: 6px 0; border-radius: 8px; border: 1px solid transparent; color: var(--muted); cursor: pointer; background: transparent; font-family: inherit; }
+  .tab.on { background: rgba(94,234,212,.10); border-color: rgba(94,234,212,.3); color: var(--cyan); }
+  .tab-panel { display: none; }
+  .tab-panel.on { display: block; }
+  .phase-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+  .chip { font-size: 9.5px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); transition: all .2s; }
+  .chip.active { background: var(--cyan); color: #062a26; border-color: var(--cyan); font-weight: 700; }
+  .proto-log { display: flex; flex-direction: column; gap: 5px; max-height: 474px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .proto-line { border-left: 3px solid var(--blue); background: rgba(255,255,255,.03); border-radius: 5px; padding: 5px 7px; font-size: 10px; line-height: 1.5; word-break: break-all; animation: chatIn .2s; }
+  .proto-line code { color: #c9d5e3; }
+  .badge-type { display: inline-block; font-size: 8px; padding: 1px 4px; border-radius: 3px; margin-right: 5px; background: rgba(96,165,250,.17); color: var(--blue); font-family: inherit; vertical-align: 1px; }
+  .proto-line.state { border-left-color: var(--blue); }
+  .proto-line.state .badge-type { background: rgba(96,165,250,.17); color: var(--blue); }
+  .proto-line.action { border-left-color: var(--amber); }
+  .proto-line.action .badge-type { background: rgba(251,191,36,.16); color: var(--amber); }
+  .proto-line.ack { border-left-color: var(--green); }
+  .proto-line.ack .badge-type { background: rgba(52,211,153,.16); color: var(--green); }
+  .proto-line.ack.bad { border-left-color: var(--red); }
+  .proto-line.ack.bad .badge-type { background: rgba(248,113,113,.16); color: var(--red); }
+  .proto-line.event { border-left-color: var(--violet); }
+  .proto-line.event .badge-type { background: rgba(167,139,250,.16); color: var(--violet); }
+  .proto-line.cmd { border-left-color: var(--cyan); }
+  .proto-line.cmd .badge-type { background: rgba(94,234,212,.14); color: var(--cyan); }
+  .proto-line.decision { border-left-color: var(--pink); }
+  .proto-line.decision .badge-type { background: rgba(244,114,182,.15); color: var(--pink); }
+  .proto-line.error { border-left-color: var(--red); }
+  .fsm { display: flex; flex-direction: column; gap: 7px; }
+  .fsm-row { display: flex; gap: 9px; align-items: flex-start; font-size: 11px; line-height: 1.5; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.025); }
+  .fsm-row b { flex: 0 0 74px; color: var(--cyan); font-size: 10px; font-weight: 600; }
+  .fsm-row span { color: #a9b7c8; }
+  .notes { font-size: 11.5px; line-height: 1.75; color: #a9b7c8; }
+  .notes h3 { font-size: 12px; color: var(--text); margin: 12px 0 4px; }
+  .notes h3:first-child { margin-top: 0; }
+  .notes code { color: var(--amber); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes li { margin: 2px 0; }
+  .foot { margin-top: 16px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .foot b { color: var(--amber); font-weight: 600; }
+  @media (max-width: 1180px) {
+    .grid { grid-template-columns: 390px 1fr; }
+    .protocol-col { grid-column: 1 / -1; }
+    .phone-wrap { position: static; }
+  }
+  @media (max-width: 820px) {
+    .grid { grid-template-columns: 1fr; }
+    .phone-wrap { max-width: 390px; margin: 0 auto; width: 100%; }
+    .host-col { min-height: auto; }
+    .proto-log { max-height: 300px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">🎮</div>
+      <div>
+        <h1>Game1 × AI 主持人 · 中间层模拟器 <span class="live"><i class="dot"></i>模拟直播中</span></h1>
+        <div class="sub">左边是游戏画面，中间是主播与弹幕，右边是协议消息。演示数据来自第 1 关真实题目。</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="seg on" data-speed="1">1×</button>
+      <button class="seg" data-speed="2">2×</button>
+      <button class="seg" data-speed="4">4×</button>
+      <select id="paceSelect" title="猜字节奏">
+        <option value="fast">快节奏 6s（推荐）</option>
+        <option value="normal">标准 10s</option>
+        <option value="slow">慢节奏 14s</option>
+      </select>
+      <select id="roundsSelect" title="同一元素给观众几次机会">
+        <option value="1">观众机会 1 次（推荐）</option>
+        <option value="2">观众机会 2 次</option>
+      </select>
+      <select id="modeSelect" title="玩法模式">
+        <option value="audience">观众猜字</option>
+        <option value="legacy">纯 AI 速通（旧）</option>
+      </select>
+      <select id="policySelect" title="挑字策略">
+        <option value="host">主播兜底（推荐）</option>
+        <option value="audience">全听观众的</option>
+      </select>
+      <button class="btn" id="wrongBtn" title="下一次落子故意猜错，可连点排队">故意猜错</button>
+      <button class="btn" id="skipBtn" title="立即结束当前猜字倒计时">跳过等待</button>
+      <button class="btn primary" id="restartBtn" title="回到第 1 关，3 颗心重来">重开</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- ============ 游戏 ============ -->
+    <div class="phone-wrap">
+      <div class="phone" id="phone">
+        <div class="notch"></div>
+        <div class="phone-top">
+          <div><b id="levelLabel">第 1 关</b> <span id="questionLabel" style="margin-left:6px">第 1/5 题</span></div>
+          <div class="hearts" id="hearts">❤❤❤</div>
+        </div>
+        <div class="scene">
+          <div class="idiom-card" id="idiomCard">
+            <div class="card-head"><b id="cardNo">第 1 题</b><span><span id="cardState">看题中</span><span class="mode-badge" id="modeBadge">观众猜字</span></span></div>
+            <div class="elements" id="elements"></div>
+          </div>
+          <div class="slots" id="slots"></div>
+          <div class="pool-label"><span>本关字池 · 32 块</span><span id="poolLeft">剩余 32</span></div>
+          <div class="pool" id="pool"></div>
+        </div>
+        <div class="phone-foot">
+          <span>AI 视角 · 一次处理一张图</span>
+          <span id="phaseNow">STATE</span>
+        </div>
+        <div class="timer-wrap" id="timerWrap">
+          <div class="timer-text" id="timerText">6s</div>
+          <div class="timer-track"><div class="timer-bar" id="timerBar"></div></div>
+        </div>
+        <div class="overlay" id="overlay">
+          <div>
+            <div class="big" id="overlayTitle">第 1 关 · 通过</div>
+            <div class="small" id="overlaySub">5/5 题 · 用时 02:31</div>
+            <div class="tag" id="overlayTag">准备中…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 主播 ============ -->
+    <div class="host-col">
+      <div class="panel">
+        <div class="host-head">
+          <div class="avatar">🐣</div>
+          <div>
+            <div class="host-name">林小满 <span>虚拟主播 · 汉语言文学</span></div>
+            <div class="host-mode" id="hostMode">状态：社交</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="speech"><span id="speech"></span><span class="caret"></span></div>
+        <div class="mood" style="margin-top:12px">
+          <span>兴奋</span><div class="bar excite"><i id="moodExcite" style="width:50%"></i></div><b id="moodExciteVal">5</b>
+          <span>沮丧</span><div class="bar frust"><i id="moodFrust" style="width:20%"></i></div><b id="moodFrustVal">2</b>
+          <span>专注</span><div class="bar focus"><i id="moodFocus" style="width:30%"></i></div><b id="moodFocusVal">3</b>
+        </div>
+      </div>
+
+      <div class="panel chat-panel">
+        <div class="chat-title"><span>直播间弹幕</span><span id="viewerCount">在线 3 人 · 场景模拟</span></div>
+        <div class="chat" id="chat"></div>
+        <form class="chat-form" id="chatForm">
+          <input id="chatInput" maxlength="20" placeholder="你也猜一个，回车发送（例：聪）" autocomplete="off">
+          <button class="btn" type="submit">发送</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============ 协议 ============ -->
+    <div class="protocol-col panel">
+      <div class="metrics">
+        <div class="metric"><span>猜字窗口</span><b id="mWindows">0</b></div>
+        <div class="metric"><span>窗口参与</span><b id="mPeople">0</b></div>
+        <div class="metric"><span>观众命中率</span><b id="mHit">—</b></div>
+        <div class="metric"><span>主播说话</span><b id="mSpeech">0<small>句</small></b></div>
+        <div class="metric"><span>对 / 错</span><b id="mActions">0 / 0</b></div>
+        <div class="metric"><span>本关用时</span><b id="mLevelTime">00:00</b></div>
+      </div>
+
+      <div class="phase-chips" id="phaseChips">
+        <span class="chip" data-phase="STATE">STATE</span>
+        <span class="chip" data-phase="INTRO">INTRO</span>
+        <span class="chip" data-phase="WINDOW">WINDOW</span>
+        <span class="chip" data-phase="PICK">PICK</span>
+        <span class="chip" data-phase="COMMIT">COMMIT</span>
+        <span class="chip" data-phase="JUDGE">JUDGE</span>
+        <span class="chip" data-phase="CLEAR">CLEAR</span>
+        <span class="chip" data-phase="TALK">TALK</span>
+      </div>
+
+      <div class="tabs">
+        <button class="tab on" data-tab="proto">协议消息</button>
+        <button class="tab" data-tab="fsm">状态机</button>
+        <button class="tab" data-tab="notes">说明</button>
+      </div>
+
+      <div class="tab-panel on" id="tab-proto">
+        <div class="proto-log" id="protoLog"></div>
+      </div>
+
+      <div class="tab-panel" id="tab-fsm">
+        <div class="fsm">
+          <div class="fsm-row"><b>STATE</b><span>游戏发来当前题：4 个元素、32 字池、4 个格子、剩余心。答案不在这条消息里。</span></div>
+          <div class="fsm-row"><b>INTRO</b><span>主播先开口。text 元素也分两拍：先描述、停一下、再说字落子；image 元素进入猜字窗口。</span></div>
+          <div class="fsm-row"><b>WINDOW</b><span>先留 1~3s 弹幕延迟（看节奏档），再开 6/10/14s 窗口；第二轮更短。落子前有硬截止 25s。</span></div>
+          <div class="fsm-row"><b>PICK</b><span>代码算票：≥2 个不同用户且 ≥30% 才听观众的。默认观众只猜 1 次，错了主播接手；不会同一格一直猜。</span></div>
+          <div class="fsm-row"><b>COMMIT</b><span>只发一个 action，带 stateSeq。字飞上去和话音同步，约 0.5s。</span></div>
+          <div class="fsm-row"><b>JUDGE</b><span>游戏回 ack：correct / wrong / rejected。wrong 扣心；rejected 不扣，稍后重试。</span></div>
+          <div class="fsm-row"><b>CLEAR</b><span>题目完成 / 关卡通关 / 爱心耗尽。成功发 cmd:next_level；失败发 cmd:retry_level 重玩本关；连败 2 次后本关改主播单人。</span></div>
+          <div class="fsm-row"><b>TALK</b><span>第 1~4 题拼完后，按本关“3 道释义 + 2 道出处”的安排讲；讲前 cmd:pause，讲完 cmd:resume。第 5 题不讲，直接过关。</span></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-notes">
+        <div class="notes">
+          <h3>这是什么</h3>
+          <p>这是“游戏 ↔ AI-Vtuber 中间层”的可交互模拟：状态机、猜字窗口、挑字策略、主播话术、协议消息，全部按设计稿跑。你可以自己发弹幕参与猜字。</p>
+          <h3>这不是什么</h3>
+          <p>不接真实游戏、不接真实模型、不接 TTS。它验证的是<strong>时序和交互</strong>，不是渲染效果。真实接入时，游戏通过 WebSocket 发同样的 <code>state / ack / event</code>，桥回同样的 <code>action / cmd</code>。</p>
+          <h3>这一版定的规则</h3>
+          <ul>
+            <li>每次猜都真落子；猜错真扣心，字飞回。</li>
+            <li>同一元素观众最多 <strong>1 次</strong>（可切 2 次）；猜错扣心后主播立刻接手，不会一直让观众猜到心用完。</li>
+            <li>闯关成功才进下一关；失败重玩本关。</li>
+            <li>同一关连败 2 次后，下一轮改主播单人，避免卡死在重玩循环。</li>
+            <li>每关 <strong>3 道释义 + 2 道出处</strong>，只从第 1~4 题里挑；同一题可以两个都有、只有一个、或都没有。第 5 题拼完直接过关，不讲。</li>
+            <li>讲故事前发 <code>cmd: pause</code>，讲完 <code>cmd: resume</code>；游戏在讲解期间不重发 state。</li>
+            <li>答案只留在桥本地，主播脑永远拿不到。</li>
+          </ul>
+          <h3>时间轴</h3>
+          <p>窗口长度看右上角节奏档：<code>快 6s / 标准 10s / 慢 14s</code>；缓冲 1~3s；第二轮更短；硬截止 25s。讲解段落不设倒计时，讲完 resume。</p>
+          <h3>怎么看最直观</h3>
+          <p>先看 1× 的“观众猜字”，再切“纯 AI 速通”对比节奏；把策略切到“全听观众的”，会看到连续猜错、失败重玩本关。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>说明：</b>这是设计稿的可交互演示，不是最终程序。真实版本里，游戏侧还需要补 <code>event / cmd</code>：成功 <code>next_level</code>，失败 <code>retry_level</code>，讲解前后 <code>pause / resume</code>；连败保护由桥侧决定。
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ==================== 数据 ==================== */
+  const QUESTIONS = [
+    {
+      no: 1, answer: "万无一失",
+      types: ["text", "text", "image", "image"],
+      hints: ["黑色大字“万”", "黑色大字“无”", "橘黄色的小衣架", "橙红色带绿蒂的柿子"],
+      emojis: ["万", "无", "🧥", "🍅"],
+    },
+    {
+      no: 2, answer: "不拘小节",
+      types: ["text", "image", "text", "image"],
+      hints: ["黑色大字“不”", "带叶子的黄橙橙橘子", "明晃晃的“小”字", "带竹叶的绿竹子"],
+      emojis: ["不", "🍊", "小", "🎋"],
+    },
+    {
+      no: 3, answer: "万里挑一",
+      types: ["text", "text", "image", "image"],
+      hints: ["白框蓝字“万”", "加粗黑字“里”", "穿橙黄古装跳舞的女子", "竖起大拇指的手 + 数字 1"],
+      emojis: ["万", "里", "💃", "👍"],
+    },
+    {
+      no: 4, answer: "驰名中外",
+      types: ["image", "image", "text", "text"],
+      hints: ["黄灿灿带刻度的直尺", "明晃晃的大太阳", "麻将里的红中牌", "明明白白一个“外”字"],
+      emojis: ["📏", "☀️", "中", "外"],
+    },
+    {
+      no: 5, answer: "聪明伶俐",
+      types: ["image", "text", "image", "image"],
+      hints: ["圆滚滚带刺的小刺猬", "明明白白一个大大的“明”", "黄灿灿的小铃铛", "清清楚楚的“俐”字"],
+      emojis: ["🦔", "明", "🔔", "俐"],
+    },
+  ];
+  const DISTRACTORS = ["人", "大", "上", "天", "日", "月", "水", "火", "山", "口", "手", "心"];
+  const TALK_DATA = {
+  "1": {
+    "meaning": "万无一失这个成语形容做事情非常有把握，筹划得又很周密又非常稳妥，一万次行动里也都一定不会出一次差错，就是个褒义词。",
+    "origin": "万无一失出自西汉司马迁著的史记淮阴侯列传，原文是以此参之，万不失一，后来演变成万无一失。秦末汉初，大将军韩信为刘邦打下大半江山，被封为齐王。当时有一个叫蒯通的谋士擅长相面，他偷偷拜见韩信说，我看您的面相最多只能封侯，还随时有性命之忧，可看您的背相却是贵不可言。现在楚汉相争耗了三年，您手握重兵，帮谁谁赢，要是趁机自立，趁两败俱伤时收服天下，这计策绝对万无一失。可惜韩信念恩不肯背叛，最后果然被吕后设计害死。"
+  },
+  "2": {
+    "meaning": "这个成语啊就是说人不会被那些无关紧要的小规矩和那些鸡毛蒜皮的小事束缚住。它一般也用来夸人性格洒脱、注重大局，可平时不会揪着那些细碎的小事情斤斤计较。",
+    "origin": "这个成语的出处是南朝宋范晔编撰的后汉书虞延传，原文是性敦朴不拘小节又无乡曲之誉。东汉虞延生性忠厚直爽，为人从不在意那些细碎的礼数和无关紧要的小事。他年轻时当亭长，当时王莽宠妃的门客在当地作恶，旁人都不敢得罪权贵，虞延却直接带着手下差役冲进去把人抓了，心里完全没纠结这件事会不会影响自己的整个前途。他这种不困于小事敢作敢当的性子，后来得到光武帝刘秀的赏识，最终成了东汉初年的名臣。"
+  },
+  "3": {
+    "meaning": "万里挑一是说，一万个同类的人或事物里才能挑出这么一个。它专门用来形容人特别优秀出众，或者东西格外稀有难得，是程度很高的夸赞词哦。",
+    "origin": "万里挑一这个成语的说法由清代百里挑一的说法引申演变而来，最早的相关表述见于曹雪芹红楼梦。当年贾府里头商议宝玉婚事，王夫人和王熙凤私下盘算，林姑娘才情虽高但身子太弱，宝姑娘模样周正，行事又周全妥当，府里上下都夸她是百里挑一的好姑娘。后来老百姓觉得百里还不够形容人特别出众，就慢慢把范围扩大到万里，演化出了万里挑一的说法，用来形容人或事物稀缺到一万个里才出一个。"
+  },
+  "4": {
+    "meaning": "驰名中外这个成语里，驰就是传播、传开的意思。整个成语要表达的意思是说名声传播的范围很广，不仅在国内人人都知道，连在国外都有知名度，用来形容名气非常大。它是一个褒义词，只能用在好的人或者好的事物身上了啊。",
+    "origin": "说到这个成语的出处啊，最早的源头也可以追溯到北魏时期郦道元写的水经注涑水这部书，里面原本写的是赀拟王公，驰名天下，这句话的意思是富裕程度能和王公贵族比肩，名声传遍天下，后来大家就慢慢衍生出了驰名中外的说法，专门用来形容名声传遍国内和国外。你看咱们中国的贵州茅台酒，那可是确实真的驰名中外啊！早在1915年的巴拿马万国博览会上，咱们的茅台酒因为包装朴素，一开始根本没人注意。中国代表急中生智，故意假装失手，把茅台酒瓶摔碎在地上。顿时整个展馆都飘满了浓郁的酒香，在场的外国人都惊呆了，尝过之后更是赞不绝口，最后茅台酒直接拿下了金奖。从那以后，中国茅台就彻底驰名中外了。现在一提中国名酒，好多外国人第一个想到的也就是它。"
+  },
+  "5": {
+    "meaning": "聪明伶俐啊就是用来形容人头脑聪慧，反应特别快，机灵又通透，就是个实打实的褒义词。平时大多都用来夸小朋友机灵又可爱，夸年轻人办事活络也完全能用，这词用来夸人也很合适。",
+    "origin": "说到聪明伶俐这个成语的出处，它最早出自明代施耐庵写的水浒传第二十四回，书中原文是你既是聪明伶俐，却不道长嫂为母？民间小故事里，古时候江南有一户开小杂货铺的人家，家里有个小闺女叫阿荔，才七八岁就特别会来事儿，客人来买东西她能精准记住每位客人的喜好，还能帮着爹娘盘账算账，一点儿都不出错。街坊邻居去他家买东西时都要夸两句，都说这小丫头聪明伶俐，长大以后肯定比爹娘还会做生意呢！"
+  }
+};
+  const NAMES = ["三哥", "阿茶", "晚风", "柚子", "不吃香菜", "9527", "路过的", "小陈", "木木", "老白", "momo", "小满的猫"];
+  const NOISE = ["666", "主播加油", "？", "再想想", "这个好难", "哈哈哈哈", "来了来了"];
+  const HOMOPHONE = { "衣": "一", "柿": "失", "橘": "拘", "跳": "挑", "铃": "伶", "尺": "驰", "刺": "聪" };
+  const PACES = {
+    fast: { first: 6, second: 4, buffer: 1.0, secondBuffer: 0.35 },
+    normal: { first: 10, second: 6, buffer: 2.0, secondBuffer: 0.65 },
+    slow: { first: 14, second: 8, buffer: 3.0, secondBuffer: 1.0 },
+  };
+  const ABORT = Symbol("abort");
+
+  /* ==================== 状态 ==================== */
+  const state = {
+    gen: 0, running: false, speed: 1,
+    mode: "audience", policy: "host", pace: "fast",
+    level: 1, item: 0, lives: 3, round: 0, audienceRounds: 1, failStreak: 0, soloLevel: false,
+    question: QUESTIONS[0], slots: [null, null, null, null], pool: [],
+    votes: [], votedUsers: new Set(),
+    stateSeq: 0, actionSeq: 0, phase: "STATE",
+    skip: false, speechGen: 0, levelStart: 0, viewers: 3, forceWrong: 0, history: [],
+    talkPlan: null, talkPlanLevel: 0, talkKind: "",
+    stats: { windows: 0, people: 0, audienceAttempts: 0, audienceHits: 0, correct: 0, wrong: 0, speech: 0 },
+    mood: { excite: 5, frust: 2, focus: 3 },
+  };
+
+  /* ==================== 工具 ==================== */
+  const $ = (s) => document.querySelector(s);
+  const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const clamp = (n, a = 0, b = 10) => Math.max(a, Math.min(b, n));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms / state.speed)));
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const formatTime = (ms) => {
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  };
+  const firstEmpty = () => state.slots.findIndex((s) => s === null);
+  const check = (gen) => { if (gen !== state.gen) throw ABORT; };
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function buildPool() {
+    const tiles = [];
+    let id = 0;
+    QUESTIONS.forEach((q) => q.answer.split("").forEach((ch) => tiles.push({ id: id++, char: ch, used: false })));
+    DISTRACTORS.forEach((ch) => tiles.push({ id: id++, char: ch, used: false }));
+    return shuffle(tiles);
+  }
+
+  function findTile(char) {
+    return state.pool.find((t) => t.char === char && !t.used) || null;
+  }
+
+  /* ==================== 协议日志 ==================== */
+  function logProto(obj, kind) {
+    const log = $("#protoLog");
+    const line = document.createElement("div");
+    const typeClass = kind === "ack bad" ? "ack bad" : kind;
+    line.className = "proto-line " + typeClass;
+    const label = obj.type || kind.split(" ")[0];
+    line.innerHTML = '<span class="badge-type">' + escapeHtml(label) + "</span><code>" + escapeHtml(JSON.stringify(obj)) + "</code>";
+    log.appendChild(line);
+    while (log.children.length > 70) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function emitState() {
+    state.stateSeq++;
+    const q = state.question;
+    logProto({
+      type: "state", v: 2, seq: state.stateSeq,
+      levelId: state.level, itemIndex: state.item, questionNo: q.no,
+      remainingLives: state.lives, phase: firstEmpty() >= 0 ? "ready" : "locked",
+      elements: q.types.map((t, i) => ({ index: i, type: t, hint: q.hints[i] })),
+      charPool: "32 项（省略）",
+      slots: state.slots.map((s, i) => ({ index: i, filled: s !== null })),
+      deadlineMs: 30000,
+    }, "state");
+  }
+
+  /* ==================== 渲染 ==================== */
+  function renderAll() {
+    renderLabels();
+    renderHearts();
+    renderElements();
+    renderSlots();
+    renderPool();
+    renderMood();
+    updateMetrics();
+  }
+
+  function renderLabels() {
+    $("#levelLabel").textContent = "第 " + state.level + " 关";
+    $("#questionLabel").textContent = "第 " + (state.item + 1) + "/5 题";
+    $("#cardNo").textContent = "第 " + (state.item + 1) + " 题";
+    $("#cardState").textContent = state.phase === "TALK"
+      ? (state.talkKind === "origin" ? "讲出处" : "讲释义")
+      : state.phase === "WINDOW" ? "猜字中" : state.phase === "CLEAR" ? "已完成" : "看题中";
+    $("#phaseNow").textContent = state.phase;
+    $("#modeBadge").textContent = state.mode === "legacy" ? "纯 AI 速通" : state.soloLevel ? "本关：主播单人" : "观众猜字";
+    $("#poolLeft").textContent = "剩余 " + state.pool.filter((t) => !t.used).length;
+    $("#viewerCount").textContent = "在线 " + (state.mode === "legacy" ? "—" : state.viewers) + " 人 · 场景模拟";
+  }
+
+  function renderHearts() {
+    $("#hearts").textContent = "❤".repeat(state.lives) + "🖤".repeat(Math.max(0, 3 - state.lives));
+  }
+
+  function renderElements() {
+    const active = firstEmpty();
+    $("#elements").innerHTML = state.question.types.map((t, i) => {
+      const done = state.slots[i] !== null;
+      const cls = "el" + (i === active ? " active" : "") + (done ? " done" : "");
+      const body = t === "text"
+        ? '<div class="big">' + escapeHtml(state.question.answer[i]) + "</div>"
+        : '<div class="emoji">' + state.question.emojis[i] + '</div><div class="hint">' + escapeHtml(state.question.hints[i]) + "</div>";
+      return '<div class="' + cls + '"><span class="badge">' + t + "</span>" + body + "</div>";
+    }).join("");
+  }
+
+  function renderSlots() {
+    const active = firstEmpty();
+    $("#slots").innerHTML = state.slots.map((s, i) => {
+      const cls = "slot" + (s !== null ? " filled" : "") + (i === active ? " active" : "");
+      return '<div class="' + cls + '" data-slot="' + i + '">' + escapeHtml(s || "") + "</div>";
+    }).join("");
+  }
+
+  function renderPool() {
+    $("#pool").innerHTML = state.pool.map((t) =>
+      '<div class="tile' + (t.used ? " used" : "") + '" data-id="' + t.id + '" data-char="' + escapeHtml(t.char) + '">' + escapeHtml(t.char) + "</div>"
+    ).join("");
+    $("#poolLeft").textContent = "剩余 " + state.pool.filter((t) => !t.used).length;
+  }
+
+  function renderMood() {
+    $("#moodExcite").style.width = state.mood.excite * 10 + "%";
+    $("#moodFrust").style.width = state.mood.frust * 10 + "%";
+    $("#moodFocus").style.width = state.mood.focus * 10 + "%";
+    $("#moodExciteVal").textContent = state.mood.excite;
+    $("#moodFrustVal").textContent = state.mood.frust;
+    $("#moodFocusVal").textContent = state.mood.focus;
+    $("#hostMode").textContent = "状态：" + (state.phase === "WINDOW" ? "专注" : state.mood.frust >= 7 ? "疲惫" : "社交");
+  }
+
+  function bumpMood(e, f, fo) {
+    state.mood.excite = clamp(state.mood.excite + e);
+    state.mood.frust = clamp(state.mood.frust + f);
+    state.mood.focus = clamp(state.mood.focus + fo);
+    renderMood();
+  }
+
+  function updateMetrics() {
+    $("#mWindows").textContent = state.stats.windows;
+    $("#mPeople").textContent = state.stats.people;
+    $("#mHit").textContent = state.stats.audienceAttempts
+      ? Math.round(100 * state.stats.audienceHits / state.stats.audienceAttempts) + "%"
+      : "—";
+    $("#mSpeech").innerHTML = state.stats.speech + "<small>句</small>";
+    $("#mActions").textContent = state.stats.correct + " / " + state.stats.wrong;
+    $("#mLevelTime").textContent = state.levelStart ? formatTime(performance.now() - state.levelStart) : "00:00";
+  }
+
+  function setPhase(name) {
+    state.phase = name;
+    document.querySelectorAll("#phaseChips .chip").forEach((c) => c.classList.toggle("active", c.dataset.phase === name));
+    $("#phaseNow").textContent = name;
+  }
+
+  /* ==================== 弹幕 ==================== */
+  function addChat(user, content, opts = {}) {
+    const feed = $("#chat");
+    const line = document.createElement("div");
+    line.className = "chat-line" + (opts.system ? " system" : "") + (user === "你" ? " mine" : "");
+    line.innerHTML = opts.system
+      ? "<span>" + escapeHtml(content) + "</span>"
+      : '<span class="chat-name">' + escapeHtml(user) + "</span><span>" + escapeHtml(content) + "</span>";
+    feed.appendChild(line);
+    while (feed.children.length > 40) feed.removeChild(feed.firstChild);
+    feed.scrollTop = feed.scrollHeight;
+
+    if (!opts.system && !opts.noVote && state.phase === "WINDOW") {
+      const char = resolveVote(content);
+      if (char) recordVote(user, char);
+    }
+  }
+
+  function resolveVote(content) {
+    const chars = content.match(/[\u4e00-\u9fa5]/g) || [];
+    const slot = firstEmpty();
+    const cur = slot >= 0 ? state.question.answer[slot] : null;
+    if (cur && chars.includes(cur)) return cur;
+    for (const c of chars) if (state.pool.some((t) => t.char === c)) return c;
+    for (const c of chars) {
+      const mapped = HOMOPHONE[c];
+      if (mapped && state.pool.some((t) => t.char === mapped)) return mapped;
+    }
+    return null;
+  }
+
+  function recordVote(user, char) {
+    if (state.votedUsers.has(user)) return;
+    state.votedUsers.add(user);
+    state.votes.push({ user, char });
+    const tiles = document.querySelectorAll('.tile[data-char="' + char + '"]:not(.used)');
+    if (tiles.length) {
+      const tile = tiles[0];
+      tile.classList.add("flash");
+      setTimeout(() => tile.classList.remove("flash"), 500);
+    }
+  }
+
+  function simulateMessage() {
+    const slot = firstEmpty();
+    if (slot < 0) return;
+    const correct = state.question.answer[slot];
+    const available = state.pool.filter((t) => !t.used).map((t) => t.char);
+    const wrongPool = available.filter((c) => c !== correct);
+    const r = Math.random();
+    let content;
+    if (r < 0.28) {
+      content = rnd([correct, "我猜" + correct, correct + "吧", "是不是" + correct, correct + "！"]);
+    } else if (r < 0.66) {
+      const wrong = wrongPool.length ? rnd(wrongPool) : correct;
+      content = rnd([wrong, "我猜" + wrong, "是不是" + wrong]);
+    } else if (r < 0.75) {
+      const homophone = Object.keys(HOMOPHONE).find((k) => HOMOPHONE[k] === correct);
+      content = homophone ? rnd([homophone, "是不是" + homophone]) : correct;
+    } else {
+      content = rnd(NOISE);
+    }
+    addChat(rnd(NAMES), content);
+
+    if (Math.random() < 0.12 && wrongPool.length) {
+      const gen = state.gen;
+      const wrong = rnd(wrongPool);
+      for (let i = 0; i < 2; i++) {
+        setTimeout(() => {
+          if (gen === state.gen) addChat(rnd(NAMES), rnd([wrong, "就" + wrong, wrong + "啊"]));
+        }, (280 * (i + 1)) / state.speed);
+      }
+    }
+  }
+
+  function startAudience() {
+    const gen = state.gen;
+    const tick = () => {
+      if (gen !== state.gen || state.phase !== "WINDOW") return;
+      simulateMessage();
+      setTimeout(tick, (420 + Math.random() * 760) / state.speed);
+    };
+    setTimeout(tick, 260);
+  }
+
+  /* ==================== 主播 ==================== */
+  const LINES = {
+    levelStart: ["第 {level} 关，走起。", "来，第 {level} 关，今天争取少错两次。", "好，第 {level} 关，我先看第一张。"],
+    intro: ["先看这题。", "来，这张图。", "好，下一张。"],
+    text: ["{hint}，这个直接给——{char}。", "{hint}，不用绕，就是{char}。", "这个也明说，{hint}，{char}。"],
+    textSetup: ["{hint}，这个直接对应——", "先看这个，{hint}，不用绕——", "{hint}，送分题啊——"],
+    textReveal: ["{char}。", "就是{char}。", "{char}，放上去。"],
+    ask: ["{hint}，打一字，公屏见。", "看这个{hint}，猜一个字，公屏。", "{hint}，你们说是什么字？"],
+    askAgain: ["不对啊……再给你们一次，{hint}。", "还有一次机会，{hint}，快点。", "行，再来，{hint}。"],
+    pickAudience: ["{name}说{char}，还有人说{other}……我押{char}。", "{name}刷{char}是吧？行，我信你一次，{char}。", "公屏都说是{char}，那就{char}。"],
+    pickSolo: ["没人猜？那我自己来，{char}。", "行吧，我看是{char}，我放了啊。", "等不及了，我猜{char}。"],
+    correct: ["对，就是{char}。", "稳了，{char}。", "看吧，{char}。"],
+    wrong: ["啊？不对？……行，再来。", "我还不信了。", "错了错了，心都疼。"],
+    questionClear: ["这张过了，下一张。", "好，下一张。", "收，继续。"],
+    levelClear: ["第 {level} 关，收工，进下一关。", "过了过了，第 {level} 关拿下。", "第 {level} 关，走，下一关。"],
+    levelFail: ["三颗心没了，这关重来。", "不行，心没了……这关再来一遍。", "这关今天不顺，重打一遍。"],
+    soloLevel: ["这关我先把你们带过去。", "这关不赌了，我自己来。", "连输两次了，这关我自己过。"],
+    solo: ["行，这格我来，{char}。", "不猜了，我锁{char}。", "你们歇会儿，我自己来，{char}。"],
+  };
+
+  function line(key, vars = {}) {
+    let text = rnd(LINES[key] || [""]);
+    Object.keys(vars).forEach((k) => { text = text.split("{" + k + "}").join(vars[k]); });
+    return text;
+  }
+
+  let speechChain = Promise.resolve();
+  function speak(text) {
+    const gen = state.speechGen;
+    const charMs = Math.max(32, 50 / Math.sqrt(state.speed));
+    const holdMs = Math.max(200, 350 / Math.sqrt(state.speed));
+    state.stats.speech++;
+    updateMetrics();
+    speechChain = speechChain.then(async () => {
+      if (gen !== state.speechGen) return;
+      const node = $("#speech");
+      node.textContent = "";
+      for (const ch of text) {
+        if (gen !== state.speechGen) return;
+        node.textContent += ch;
+        await new Promise((r) => setTimeout(r, charMs));
+      }
+      if (gen !== state.speechGen) return;
+      await new Promise((r) => setTimeout(r, holdMs));
+    }).catch(() => {});
+    return speechChain;
+  }
+
+  /* ==================== 窗口 / 投票 ==================== */
+  function tally() {
+    const map = new Map();
+    for (const v of state.votes) {
+      if (!map.has(v.char)) map.set(v.char, new Set());
+      map.get(v.char).add(v.user);
+    }
+    let top = null;
+    for (const [char, users] of map) {
+      if (!top || users.size > top.users) top = { char, users: users.size };
+    }
+    return { top, total: state.votedUsers.size };
+  }
+
+  function decide() {
+    const slot = firstEmpty();
+    const answer = state.question.answer[slot];
+    const t = tally();
+    if (state.forceWrong > 0) {
+      state.forceWrong--;
+      const wrongTiles = state.pool.filter((tile) => !tile.used && tile.char !== answer);
+      if (wrongTiles.length) return { char: rnd(wrongTiles).char, by: "audience", t, forced: true };
+    }
+    if (state.policy === "audience" && t.top) return { char: t.top.char, by: "audience", t };
+    if (t.top && t.top.users >= 2 && t.top.users / Math.max(1, t.total) >= 0.3) {
+      return { char: t.top.char, by: "audience", t };
+    }
+    return { char: answer, by: "player", t };
+  }
+
+  async function openWindow(isFirst, gen) {
+    check(gen);
+    const pace = PACES[state.pace] || PACES.fast;
+    const seconds = isFirst ? pace.first : pace.second;
+    state.votes = [];
+    state.votedUsers = new Set();
+    setPhase("WINDOW");
+    renderLabels();
+
+    const slot = firstEmpty();
+    const hint = state.question.hints[slot];
+    if (isFirst) speak(line("ask", { hint }));
+    else speak(line("askAgain", { hint }));
+    addChat("系统", isFirst ? seconds + " 秒猜字，公屏刷起来" : seconds + " 秒，再来一轮", { system: true });
+
+    await sleep((isFirst ? pace.buffer : pace.secondBuffer) * 1000); check(gen);
+    startAudience();
+    await countdown(seconds, gen); check(gen);
+
+    setPhase("PICK");
+    const d = decide();
+    const slotChar = state.question.answer[slot];
+    state.stats.windows++;
+    state.stats.people += d.t.total;
+    if (d.by === "audience") {
+      state.stats.audienceAttempts++;
+      if (d.char === slotChar) state.stats.audienceHits++;
+    }
+    state.history.push({ t: "decision", by: d.by, char: d.char, slot, answer: slotChar, voters: d.t.total, forced: !!d.forced });
+    if (state.history.length > 200) state.history.shift();
+    logProto({
+      type: "decision", decidedBy: d.by, char: d.char,
+      answer: d.by === "audience" ? undefined : slotChar,
+      windowVoters: d.t.total,
+      top: d.t.top ? { char: d.t.top.char, users: d.t.top.users } : null,
+      rule: d.by === "audience" ? "观众票数达标" : "主播兜底",
+    }, "decision");
+
+    const other = d.t.top && d.t.top.char !== d.char ? d.t.top.char : "别的";
+    if (d.by === "audience") speak(line("pickAudience", { name: rnd(NAMES), char: d.char, other }));
+    else speak(line("pickSolo", { char: d.char }));
+    await sleep(380); check(gen);
+    await commit(d.char, gen);
+  }
+
+  async function countdown(seconds, gen) {
+    let remain = seconds;
+    $("#timerWrap").classList.add("show");
+    while (remain > 0.01) {
+      $("#timerText").textContent = Math.ceil(remain) + "s";
+      $("#timerBar").style.width = (remain / seconds) * 100 + "%";
+      await sleep(100); check(gen);
+      remain -= 0.1;
+      if (state.skip) { state.skip = false; break; }
+    }
+    $("#timerWrap").classList.remove("show");
+  }
+
+  /* ==================== 落子 ==================== */
+  function animateFly(tileEl, slotEl, char) {
+    if (!tileEl || !slotEl) return;
+    const from = tileEl.getBoundingClientRect();
+    const to = slotEl.getBoundingClientRect();
+    const ghost = document.createElement("div");
+    ghost.className = "fly-ghost";
+    ghost.textContent = char;
+    ghost.style.left = from.left + "px";
+    ghost.style.top = from.top + "px";
+    ghost.style.width = from.width + "px";
+    ghost.style.height = from.height + "px";
+    document.body.appendChild(ghost);
+    const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+    const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+    const anim = ghost.animate(
+      [
+        { transform: "translate(0,0) scale(1)", opacity: 1 },
+        { transform: "translate(" + dx + "px," + dy + "px) scale(1.35)", opacity: 0.92 },
+      ],
+      { duration: 520 / state.speed, easing: "cubic-bezier(.2,.8,.2,1)" }
+    );
+    anim.onfinish = () => ghost.remove();
+  }
+
+  function shakeSlot(slot) {
+    const el = document.querySelector('.slot[data-slot="' + slot + '"]');
+    if (!el) return;
+    el.classList.add("shake");
+    setTimeout(() => el.classList.remove("shake"), 450);
+  }
+
+  async function commit(char, gen) {
+    check(gen);
+    const slot = firstEmpty();
+    if (slot < 0) return;
+    const tile = findTile(char);
+    if (!tile) {
+      logProto({ type: "ack", result: "rejected", reason: "char unavailable", char, slotIndex: slot }, "ack bad");
+      return;
+    }
+    setPhase("COMMIT");
+    const tileEl = document.querySelector('.tile[data-id="' + tile.id + '"]');
+    const slotEl = document.querySelector('.slot[data-slot="' + slot + '"]');
+    animateFly(tileEl, slotEl, char);
+    state.actionSeq++;
+    logProto({ type: "action", seq: state.actionSeq, stateSeq: state.stateSeq, char, slotIndex: slot }, "action");
+
+    await sleep(450); check(gen);
+    const ok = char === state.question.answer[slot];
+    const remain = ok ? state.lives : state.lives - 1;
+    logProto({
+      type: "ack", seq: state.actionSeq, stateSeq: state.stateSeq,
+      result: ok ? "correct" : "wrong",
+      remainingLives: remain,
+      questionCompleted: ok && state.slots.every((s, i) => i === slot ? true : s !== null),
+      levelCompleted: false, locked: false,
+    }, ok ? "ack" : "ack bad");
+    state.history.push({ t: "ack", char, slot, ok, lives: ok ? state.lives : state.lives - 1 });
+    if (state.history.length > 200) state.history.shift();
+
+    if (ok) {
+      state.slots[slot] = char;
+      tile.used = true;
+      state.stats.correct++;
+      renderSlots(); renderPool(); renderElements();
+      const slotDom = document.querySelector('.slot[data-slot="' + slot + '"]');
+      if (slotDom) { slotDom.classList.add("pop"); setTimeout(() => slotDom.classList.remove("pop"), 380); }
+      bumpMood(1, -1, 1);
+      speak(line("correct", { char }));
+      await sleep(350); check(gen);
+      emitState();
+    } else {
+      state.lives--;
+      state.stats.wrong++;
+      renderHearts();
+      shakeSlot(slot);
+      bumpMood(-2, 2, 0);
+      speak(line("wrong"));
+      await sleep(850); check(gen);
+      emitState();
+    }
+    updateMetrics();
+  }
+
+  /* ==================== 题目 / 关卡 ==================== */
+  async function playText(index, gen) {
+    const ch = state.question.answer[index];
+    setPhase("INTRO");
+    await speak(line("textSetup", { hint: state.question.hints[index] }));
+    await sleep(320); check(gen);
+    await speak(line("textReveal", { char: ch }));
+    await sleep(120); check(gen);
+    await commit(ch, gen);
+    await sleep(100);
+  }
+
+  async function playImage(index, gen) {
+    state.round = 0;
+    if (state.soloLevel) {
+      setPhase("INTRO");
+      logProto({ type: "decision", decidedBy: "player", char: state.question.answer[index], rule: "连败 2 次，本关主播单人" }, "decision");
+      speak(line("soloLevel"));
+      await sleep(280); check(gen);
+      await commit(state.question.answer[index], gen);
+      return;
+    }
+    while (state.lives > 0 && state.slots[index] === null) {
+      const isFirst = state.round === 0;
+      await openWindow(isFirst, gen); check(gen);
+      if (state.slots[index] !== null) return;
+      state.round++;
+      if (state.round >= state.audienceRounds) break;
+    }
+    if (state.lives > 0 && state.slots[index] === null) {
+      logProto({ type: "decision", decidedBy: "player", char: state.question.answer[index], rule: "观众猜错，主播接手" }, "decision");
+      speak(line("solo", { char: state.question.answer[index] }));
+      await sleep(280); check(gen);
+      await commit(state.question.answer[index], gen);
+    }
+  }
+
+  async function legacyPlace(index, gen) {
+    setPhase("INTRO");
+    await speak(line("text", { hint: state.question.hints[index], char: state.question.answer[index] }));
+    await sleep(250); check(gen);
+    await commit(state.question.answer[index], gen);
+    await sleep(80);
+  }
+
+  async function playQuestion(gen) {
+    state.question = QUESTIONS[state.item];
+    state.slots = [null, null, null, null];
+    state.round = 0;
+    state.pool = state.pool && state.pool.length ? state.pool : buildPool();
+    renderAll();
+    setPhase("STATE");
+    emitState();
+    speak(line("intro"));
+    await sleep(300); check(gen);
+
+    for (let i = 0; i < 4; i++) {
+      if (state.lives <= 0) break;
+      if (state.slots[i] !== null) continue;
+      setPhase("INTRO");
+      if (state.question.types[i] === "text") {
+        await playText(i, gen);
+      } else if (state.mode === "legacy") {
+        await legacyPlace(i, gen);
+      } else {
+        await playImage(i, gen);
+      }
+      check(gen);
+      renderAll();
+      if (state.slots[i] === null && state.lives > 0) {
+        await commit(state.question.answer[i], gen);
+      }
+    }
+
+    if (state.lives > 0) {
+      let guard = 0;
+      while (state.slots.some((s) => s === null) && state.lives > 0 && guard++ < 8) {
+        const slot = firstEmpty();
+        await commit(state.question.answer[slot], gen);
+        if (state.slots[slot] === null) break;
+        check(gen);
+      }
+      if (state.slots.every((s) => s !== null)) {
+        setPhase("CLEAR");
+        state.item++;
+        logProto({ type: "event", event: "question_clear", levelId: state.level, itemIndex: state.item - 1 }, "event");
+        speak(line("questionClear"));
+        const card = $("#idiomCard");
+        card.classList.add("leave");
+        await sleep(650); check(gen);
+        card.classList.remove("leave");
+      } else {
+        logProto({ type: "event", event: "question_stuck", levelId: state.level, itemIndex: state.item }, "error");
+        state.lives = 0;
+      }
+    }
+  }
+
+  function buildTalkPlan() {
+    const indices = [0, 1, 2, 3];
+    shuffle(indices);
+    const meaning = indices.slice(0, 3).sort((a, b) => a - b);
+    const originPool = [0, 1, 2, 3];
+    shuffle(originPool);
+    const origin = originPool.slice(0, 2).sort((a, b) => a - b);
+    return { meaning, origin };
+  }
+
+  function talkPlanText(plan) {
+    const parts = [];
+    for (let i = 0; i < 4; i++) {
+      const labels = [];
+      if (plan.meaning.includes(i)) labels.push("释义");
+      if (plan.origin.includes(i)) labels.push("出处");
+      if (labels.length) parts.push("第" + (i + 1) + "题 " + labels.join("+"));
+    }
+    return parts.join("、") || "本关无讲解";
+  }
+
+  function cleanTalk(text, max) {
+    let t = String(text || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max);
+    const last = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("！"), cut.lastIndexOf("？"));
+    return last > 40 ? cut.slice(0, last + 1) : cut + "……";
+  }
+
+  async function playTalk(index, gen) {
+    const plan = state.talkPlan;
+    if (!plan) return;
+    const hasMeaning = plan.meaning.includes(index);
+    const hasOrigin = plan.origin.includes(index);
+    if (!hasMeaning && !hasOrigin) return;
+
+    const q = state.question;
+    setPhase("TALK");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "pause", reason: "talk", levelId: state.level, itemIndex: index }, "cmd");
+
+    if (hasMeaning) {
+      state.talkKind = "meaning";
+      renderLabels();
+      await speak(cleanTalk(TALK_DATA[q.no] && TALK_DATA[q.no].meaning, 400));
+      check(gen);
+    }
+    if (hasOrigin) {
+      state.talkKind = "origin";
+      renderLabels();
+      await speak(cleanTalk(TALK_DATA[q.no] && TALK_DATA[q.no].origin, 500));
+      check(gen);
+    }
+
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "resume" }, "cmd");
+    state.talkKind = "";
+    setPhase("STATE");
+  }
+
+  async function playLevel(gen, lvl) {
+    state.level = lvl;
+    state.item = 0;
+    state.lives = 3;
+    state.round = 0;
+    state.pool = buildPool();
+    state.levelStart = performance.now();
+    state.stats.levelStart = performance.now();
+    if (state.talkPlanLevel !== lvl || !state.talkPlan) {
+      state.talkPlan = buildTalkPlan();
+      state.talkPlanLevel = lvl;
+    }
+    renderAll();
+    addChat("系统", "本关讲解：" + talkPlanText(state.talkPlan) + "（第 5 题直接过关）", { system: true });
+    speak(line("levelStart", { level: lvl }));
+    await sleep(250); check(gen);
+    while (state.item < 5 && state.lives > 0) {
+      await playQuestion(gen); check(gen);
+      const completed = state.item - 1;
+      if (state.lives > 0 && completed >= 0 && completed < 4) {
+        await playTalk(completed, gen); check(gen);
+      }
+    }
+    if (state.lives <= 0) {
+      await levelFail(gen);
+      return false;
+    }
+    await levelClear(gen);
+    return true;
+  }
+
+  function showOverlay(title, sub, tag) {
+    $("#overlayTitle").textContent = title;
+    $("#overlaySub").textContent = sub;
+    $("#overlayTag").textContent = tag;
+    $("#overlay").classList.add("show");
+  }
+  function hideOverlay() { $("#overlay").classList.remove("show"); }
+
+  async function levelClear(gen) {
+    setPhase("CLEAR");
+    state.failStreak = 0;
+    state.soloLevel = false;
+    const used = formatTime(performance.now() - state.levelStart);
+    logProto({ type: "event", event: "level_clear", levelId: state.level, nextLevelId: state.level + 1 }, "event");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "next_level" }, "cmd");
+    showOverlay("第 " + state.level + " 关 · 通过", "5/5 题 · 用时 " + used, "cmd: next_level → 进入下一关");
+    speak(line("levelClear", { level: state.level }));
+    await sleep(2000); check(gen);
+    hideOverlay();
+  }
+
+  async function levelFail(gen) {
+    setPhase("CLEAR");
+    state.failStreak++;
+    if (state.failStreak >= 2) state.soloLevel = true;
+    logProto({
+      type: "event", event: "level_fail", levelId: state.level, reason: "lives",
+      attempt: state.failStreak, next: state.soloLevel ? "solo_retry" : "retry",
+    }, "event");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "retry_level" }, "cmd");
+    const tag = state.soloLevel ? "连败 2 次 · 下一轮主播单人" : "cmd: retry_level → 重玩本关";
+    showOverlay(
+      "闯关失败 · 重玩本关",
+      "第 " + Math.min(state.item + 1, 5) + " 题倒下 · 本关第 " + state.failStreak + " 次失败",
+      tag
+    );
+    speak(line("levelFail"));
+    await sleep(2200); check(gen);
+    hideOverlay();
+  }
+
+  /* ==================== 主循环 ==================== */
+  async function runDemo(gen) {
+    try {
+      if (gen !== state.gen) return;
+      let lvl = 1;
+      while (state.running && gen === state.gen) {
+        const cleared = await playLevel(gen, lvl);
+        check(gen);
+        if (cleared) lvl = lvl >= 3 ? 1 : lvl + 1;
+      }
+    } catch (e) {
+      if (e !== ABORT) console.error(e);
+    }
+  }
+
+  function resetStats() {
+    state.stats = { windows: 0, people: 0, audienceAttempts: 0, audienceHits: 0, correct: 0, wrong: 0, speech: 0 };
+    state.mood = { excite: 5, frust: 2, focus: 3 };
+    state.levelStart = 0;
+    updateMetrics();
+    renderMood();
+  }
+
+  function restart() {
+    state.gen++;
+    state.running = false;
+    state.speechGen++;
+    state.skip = false;
+    state.forceWrong = 0;
+    state.votes = [];
+    state.votedUsers = new Set();
+    state.stateSeq = 0;
+    state.actionSeq = 0;
+    state.history = [];
+    hideOverlay();
+    $("#protoLog").innerHTML = "";
+    $("#chat").innerHTML = "";
+    $("#speech").textContent = "";
+    $("#timerWrap").classList.remove("show");
+    resetStats();
+    state.level = 1;
+    state.item = 0;
+    state.lives = 3;
+    state.round = 0;
+    state.failStreak = 0;
+    state.soloLevel = false;
+    state.talkPlan = null;
+    state.talkPlanLevel = 0;
+    state.talkKind = "";
+    state.pool = buildPool();
+    state.question = QUESTIONS[0];
+    state.slots = [null, null, null, null];
+    state.viewers = 3 + Math.floor(Math.random() * 4);
+    setPhase("STATE");
+    renderAll();
+    addChat("系统", "直播间已连接 · " + state.viewers + " 位观众在线", { system: true });
+    addChat("三哥", "来了来了");
+    addChat("晚风", "今天冲第几关？");
+    addChat("柚子", "主播加油");
+    const gen = state.gen;
+    state.running = true;
+    setTimeout(() => runDemo(gen), 500);
+  }
+
+  /* ==================== 事件绑定 ==================== */
+  document.querySelectorAll("[data-speed]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.speed = Number(btn.dataset.speed);
+      document.querySelectorAll("[data-speed]").forEach((b) => b.classList.toggle("on", b === btn));
+    });
+  });
+
+  $("#modeSelect").addEventListener("change", (e) => { state.mode = e.target.value; restart(); });
+  $("#roundsSelect").addEventListener("change", (e) => { state.audienceRounds = Number(e.target.value); restart(); });
+  $("#paceSelect").addEventListener("change", (e) => { state.pace = e.target.value; restart(); });
+  $("#policySelect").addEventListener("change", (e) => { state.policy = e.target.value; restart(); });
+  $("#skipBtn").addEventListener("click", () => {
+    if (state.phase === "WINDOW") state.skip = true;
+  });
+  $("#wrongBtn").addEventListener("click", () => {
+    state.forceWrong += 1;
+    addChat("系统", "（演示）下一次落子故意猜错，看扣心", { system: true });
+  });
+  $("#restartBtn").addEventListener("click", restart);
+
+  $("#chatForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $("#chatInput");
+    const text = input.value.trim();
+    if (!text) return;
+    addChat("你", text);
+    input.value = "";
+  });
+
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === tab));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("on", p.id === "tab-" + tab.dataset.tab));
+    });
+  });
+
+  setInterval(() => {
+    if (state.running && state.levelStart) {
+      $("#mLevelTime").textContent = formatTime(performance.now() - state.levelStart);
+    }
+  }, 500);
+
+  window.__demo = { state, restart };
+  restart();
+})();
+</script>
+</body>
+</html>

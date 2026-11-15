@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game2 · 看笔画猜五字 · 中间层模拟器</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: rgba(255,255,255,.035); --line: rgba(255,255,255,.09);
+    --text: #e6edf5; --muted: #8494a8; --cyan: #5eead4; --amber: #fbbf24;
+    --red: #f87171; --green: #34d399; --violet: #a78bfa; --blue: #60a5fa; --pink: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--text); font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: radial-gradient(900px 500px at 15% -10%, rgba(94,234,212,.10), transparent 60%),
+                radial-gradient(800px 500px at 95% 0%, rgba(251,191,36,.08), transparent 55%), var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 1560px; margin: 0 auto; padding: 18px 20px 26px; }
+  .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .brand { display: flex; gap: 12px; align-items: center; }
+  .logo { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; font-size: 21px;
+    background: linear-gradient(135deg, rgba(94,234,212,.22), rgba(251,191,36,.16)); border: 1px solid rgba(94,234,212,.3); }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { font-size: 11.5px; color: var(--muted); }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--red); font-size: 11px; margin-left: 8px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(248,113,113,0); } }
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .seg, .btn, select {
+    background: rgba(255,255,255,.045); color: var(--text); border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .seg:hover, .btn:hover, select:hover { border-color: rgba(94,234,212,.45); }
+  .seg.on { background: rgba(94,234,212,.14); border-color: rgba(94,234,212,.55); color: var(--cyan); }
+  .btn.primary { background: rgba(251,191,36,.15); border-color: rgba(251,191,36,.5); color: var(--amber); }
+  .grid { display: grid; grid-template-columns: 400px minmax(300px, 1fr) 430px; gap: 16px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .phone-wrap { position: sticky; top: 14px; }
+  .phone {
+    position: relative; height: 710px; border-radius: 30px; padding: 13px; color: #2b2118;
+    background: linear-gradient(180deg, #fdf8ee, #f1e5d1); box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .notch { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 108px; height: 20px; border-radius: 0 0 14px 14px; background: #171310; z-index: 4; }
+  .phone-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #7a6750; margin: 14px 4px 7px; }
+  .phone-top b { color: #2b2118; font-size: 12px; }
+  .hearts { letter-spacing: 1px; font-size: 13px; }
+  .scene { flex: 1; display: flex; flex-direction: column; gap: 9px; min-height: 0; }
+  .hanzi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .hanzi-card {
+    background: #fff; border: 1px solid rgba(160,130,90,.16); border-radius: 13px; padding: 4px 2px 2px;
+    display: flex; flex-direction: column; align-items: center; box-shadow: 0 6px 16px rgba(120,90,50,.1);
+  }
+  .hanzi-card svg { width: 54px; height: 54px; display: block; }
+  .hanzi-card .stroke-count { font-size: 8px; color: #9b876c; margin-top: 1px; }
+  .slots { display: flex; justify-content: center; gap: 7px; }
+  .slot {
+    width: 56px; height: 56px; border-radius: 12px; border: 2px dashed #cdb99a; background: rgba(255,255,255,.55);
+    display: grid; place-items: center; font-size: 25px; font-weight: 900; color: #2b2118;
+    transition: border-color .2s, background .2s, transform .2s;
+  }
+  .slot.filled { border-style: solid; border-color: #e8a33d; background: #fff1d2; }
+  .slot.active { border-color: #e8a33d; background: #fff5df; box-shadow: 0 0 0 4px rgba(232,163,61,.14); }
+  .slot.pop { animation: pop .35s; }
+  @keyframes pop { 50% { transform: scale(1.12); } }
+  .hint-line { font-size: 9px; color: #9b876c; text-align: center; }
+  .candidates { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+  .cand {
+    height: 30px; border-radius: 8px; background: #fff; border: 1px solid #e8d8bf; display: grid; place-items: center;
+    font-size: 14px; font-weight: 700; color: #4a3b2a; transition: opacity .2s, background .2s, transform .2s;
+  }
+  .cand.used { opacity: .16; text-decoration: line-through; transform: scale(.94); }
+  .cand.active { border-color: #e8a33d; background: #fff8e9; box-shadow: 0 0 0 3px rgba(232,163,61,.14); }
+  .cand.dim { opacity: .32; }
+  .cand.flash { background: #fff0c9; transform: scale(1.12); }
+  .history { max-height: 92px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: 10px; }
+  .hist-row { display: flex; justify-content: space-between; gap: 8px; background: rgba(255,255,255,.55); border-radius: 6px; padding: 3px 6px; color: #5a4a36; }
+  .hist-row b { letter-spacing: 2px; color: #2b2118; }
+  .hist-row .pct { font-weight: 800; color: #b45309; }
+  .hist-row .pct.good { color: #15803d; }
+  .phone-foot { display: flex; justify-content: space-between; font-size: 9px; color: #9b876c; padding: 6px 4px 0; }
+  .timer-wrap { position: absolute; left: 13px; right: 13px; bottom: 38px; z-index: 3; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .timer-wrap.show { opacity: 1; }
+  .timer-text { text-align: center; font-size: 10px; color: #7a6750; font-weight: 700; margin-bottom: 3px; }
+  .timer-track { height: 6px; background: rgba(43,33,24,.12); border-radius: 999px; overflow: hidden; }
+  .timer-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #e8a33d, #f2c66d); }
+  .overlay { position: absolute; inset: 0; z-index: 6; display: none; place-items: center; text-align: center;
+    background: rgba(40,30,20,.9); color: #fff; padding: 30px; }
+  .overlay.show { display: grid; }
+  .overlay .big { font-size: 26px; font-weight: 900; margin-bottom: 8px; }
+  .overlay .small { font-size: 12px; color: rgba(255,255,255,.72); line-height: 1.7; }
+  .overlay .tag { display: inline-block; margin-top: 12px; font-size: 10px; padding: 4px 9px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); }
+  .fly-ghost { position: fixed; z-index: 999; display: grid; place-items: center; pointer-events: none;
+    background: #fff; border: 1px solid #e8d8bf; border-radius: 8px; font-size: 16px; font-weight: 800; color: #2b2118; }
+  .host-col { display: flex; flex-direction: column; gap: 14px; min-height: 710px; }
+  .host-head { display: flex; gap: 11px; align-items: center; }
+  .avatar { width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; font-size: 23px;
+    background: linear-gradient(135deg, rgba(94,234,212,.25), rgba(96,165,250,.18)); border: 1px solid rgba(94,234,212,.35); }
+  .host-name { font-size: 14px; font-weight: 700; }
+  .host-name span { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .host-mode { font-size: 10px; color: var(--cyan); margin-top: 3px; }
+  .speech { min-height: 112px; max-height: 250px; overflow-y: auto; border-radius: 15px; padding: 14px 15px; font-size: 15px; line-height: 1.75;
+    background: linear-gradient(135deg, rgba(94,234,212,.10), rgba(251,191,36,.06)); border: 1px solid rgba(94,234,212,.22); position: relative; }
+  .speech::before { content: "主播 · 林小满"; position: absolute; top: -9px; left: 13px; font-size: 9px; color: var(--cyan); background: #0d131b; padding: 0 5px; border-radius: 4px; }
+  .caret { display: inline-block; width: 7px; height: 15px; background: var(--cyan); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; opacity: .8; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .mood { display: grid; grid-template-columns: 54px 1fr 28px; gap: 7px 9px; align-items: center; font-size: 10px; color: var(--muted); }
+  .bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 999px; transition: width .4s; }
+  .bar.excite i { background: linear-gradient(90deg, #fbbf24, #f472b6); }
+  .bar.frust i { background: linear-gradient(90deg, #f87171, #fb7185); }
+  .bar.focus i { background: linear-gradient(90deg, #5eead4, #60a5fa); }
+  .mood b { color: var(--text); font-size: 10px; text-align: right; }
+  .chat-panel { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  .chat-title { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+  .chat { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 180px; max-height: 330px; }
+  .chat-line { font-size: 12.5px; line-height: 1.55; background: rgba(255,255,255,.035); border-radius: 8px; padding: 5px 8px; }
+  .chat-line.system { background: transparent; color: #7f8fa4; font-size: 10.5px; text-align: center; }
+  .chat-line.mine { background: rgba(94,234,212,.09); }
+  .chat-name { color: var(--cyan); font-weight: 600; margin-right: 6px; }
+  .chat-line.mine .chat-name { color: var(--amber); }
+  .chat-form { display: flex; gap: 7px; }
+  .chat-form input { flex: 1; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 9px; color: var(--text); padding: 8px 11px; font-size: 12px; font-family: inherit; outline: none; }
+  .chat-form input:focus { border-color: rgba(94,234,212,.5); }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .metric { background: rgba(255,255,255,.035); border: 1px solid var(--line); border-radius: 10px; padding: 8px 9px; }
+  .metric span { display: block; font-size: 9px; color: var(--muted); margin-bottom: 3px; }
+  .metric b { font-size: 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 9px; }
+  .tab { flex: 1; text-align: center; font-size: 11px; padding: 6px 0; border-radius: 8px; border: 1px solid transparent; color: var(--muted); cursor: pointer; background: transparent; font-family: inherit; }
+  .tab.on { background: rgba(94,234,212,.10); border-color: rgba(94,234,212,.3); color: var(--cyan); }
+  .tab-panel { display: none; }
+  .tab-panel.on { display: block; }
+  .phase-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+  .chip { font-size: 9.5px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.active { background: var(--cyan); color: #062a26; border-color: var(--cyan); font-weight: 700; }
+  .proto-log { display: flex; flex-direction: column; gap: 5px; max-height: 474px; overflow-y: auto; font-family: ui-monospace, Consolas, monospace; }
+  .proto-line { border-left: 3px solid var(--blue); background: rgba(255,255,255,.03); border-radius: 5px; padding: 5px 7px; font-size: 10px; line-height: 1.5; word-break: break-all; }
+  .proto-line code { color: #c9d5e3; }
+  .badge-type { display: inline-block; font-size: 8px; padding: 1px 4px; border-radius: 3px; margin-right: 5px; background: rgba(96,165,250,.17); color: var(--blue); }
+  .proto-line.state { border-left-color: var(--blue); }
+  .proto-line.action { border-left-color: var(--amber); }
+  .proto-line.action .badge-type { background: rgba(251,191,36,.16); color: var(--amber); }
+  .proto-line.ack { border-left-color: var(--green); }
+  .proto-line.ack .badge-type { background: rgba(52,211,153,.16); color: var(--green); }
+  .proto-line.ack.bad { border-left-color: var(--red); }
+  .proto-line.ack.bad .badge-type { background: rgba(248,113,113,.16); color: var(--red); }
+  .proto-line.event { border-left-color: var(--violet); }
+  .proto-line.event .badge-type { background: rgba(167,139,250,.16); color: var(--violet); }
+  .proto-line.cmd { border-left-color: var(--cyan); }
+  .proto-line.cmd .badge-type { background: rgba(94,234,212,.14); color: var(--cyan); }
+  .proto-line.decision { border-left-color: var(--pink); }
+  .proto-line.decision .badge-type { background: rgba(244,114,182,.15); color: var(--pink); }
+  .fsm { display: flex; flex-direction: column; gap: 7px; }
+  .fsm-row { display: flex; gap: 9px; align-items: flex-start; font-size: 11px; line-height: 1.5; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.025); }
+  .fsm-row b { flex: 0 0 72px; color: var(--cyan); font-size: 10px; }
+  .fsm-row span { color: #a9b7c8; }
+  .notes { font-size: 11.5px; line-height: 1.75; color: #a9b7c8; }
+  .notes h3 { font-size: 12px; color: var(--text); margin: 12px 0 4px; }
+  .notes h3:first-child { margin-top: 0; }
+  .notes code { color: var(--amber); font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .foot { margin-top: 16px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .foot b { color: var(--amber); }
+  @media (max-width: 1180px) { .grid { grid-template-columns: 400px 1fr; } .protocol-col { grid-column: 1 / -1; } .phone-wrap { position: static; } }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } .phone-wrap { max-width: 400px; margin: 0 auto; width: 100%; } .host-col { min-height: auto; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">✍️</div>
+      <div>
+        <h1>Game2 · 看笔画猜五字 · 中间层模拟器 <span class="live"><i class="dot"></i>模拟直播中</span></h1>
+        <div class="sub">5 个目标字 · 40 候选 · 5 轮 · 逐字投票；第 1~2 关真实数据 + 推导话术。</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="seg on" data-speed="1">1×</button>
+      <button class="seg" data-speed="2">2×</button>
+      <button class="seg" data-speed="4">4×</button>
+      <select id="paceSelect" title="每个字的投票窗口">
+        <option value="fast">快 3s/字</option>
+        <option value="normal" selected>标准 5s/字</option>
+        <option value="slow">慢 7s/字</option>
+      </select>
+      <select id="modeSelect" title="玩法模式">
+        <option value="audience">观众猜五字</option>
+        <option value="legacy">AI 速通（旧）</option>
+      </select>
+      <select id="policySelect" title="挑答案策略">
+        <option value="host">主播兜底</option>
+        <option value="audience">全听观众的</option>
+      </select>
+      <button class="btn" id="wrongBtn" title="下一次提交故意错一个字">故意猜错</button>
+      <button class="btn" id="skipBtn">跳过等待</button>
+      <button class="btn primary" id="restartBtn">重开</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="phone-top">
+          <div><b id="levelLabel">第 1 关</b> <span id="attemptLabel" style="margin-left:6px">第 1/5 次</span></div>
+          <div class="hearts" id="hearts">❤❤❤❤❤</div>
+        </div>
+        <div class="scene">
+          <div class="hanzi-row" id="hanziRow"></div>
+          <div class="slots" id="slots"></div>
+          <div class="hint-line" id="hintLine">从 40 个候选字里选 5 个，按顺序填</div>
+          <div class="candidates" id="candidates"></div>
+          <div class="history" id="history"></div>
+        </div>
+        <div class="phone-foot">
+          <span>Game2 · 看残缺笔画猜五个字</span>
+          <span id="phaseNow">STATE</span>
+        </div>
+        <div class="timer-wrap" id="timerWrap">
+          <div class="timer-text" id="timerText">10s</div>
+          <div class="timer-track"><div class="timer-bar" id="timerBar"></div></div>
+        </div>
+        <div class="overlay" id="overlay">
+          <div>
+            <div class="big" id="overlayTitle">第 1 关 · 通过</div>
+            <div class="small" id="overlaySub">3 次机会 · 最高 100%</div>
+            <div class="tag" id="overlayTag">cmd: next_level</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="host-col">
+      <div class="panel">
+        <div class="host-head">
+          <div class="avatar">🐣</div>
+          <div>
+            <div class="host-name">林小满 <span>虚拟主播 · 汉语言文学</span></div>
+            <div class="host-mode" id="hostMode">状态：专注</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="speech"><span id="speech"></span><span class="caret"></span></div>
+        <div class="mood" style="margin-top:12px">
+          <span>兴奋</span><div class="bar excite"><i id="moodExcite" style="width:50%"></i></div><b id="moodExciteVal">5</b>
+          <span>沮丧</span><div class="bar frust"><i id="moodFrust" style="width:20%"></i></div><b id="moodFrustVal">2</b>
+          <span>专注</span><div class="bar focus"><i id="moodFocus" style="width:40%"></i></div><b id="moodFocusVal">4</b>
+        </div>
+      </div>
+      <div class="panel chat-panel">
+        <div class="chat-title"><span>直播间弹幕</span><span id="viewerCount">在线 4 人 · 场景模拟</span></div>
+        <div class="chat" id="chat"></div>
+        <form class="chat-form" id="chatForm">
+          <input id="chatInput" maxlength="6" placeholder="猜当前这个字，例如：叔" autocomplete="off">
+          <button class="btn" type="submit">发送</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="protocol-col panel">
+      <div class="metrics">
+        <div class="metric"><span>第几次</span><b id="mAttempt">1/5</b></div>
+        <div class="metric"><span>最高相似度</span><b id="mBest">0%</b></div>
+        <div class="metric"><span>观众猜测</span><b id="mAudience">0</b></div>
+        <div class="metric"><span>本关用时</span><b id="mTime">00:00</b></div>
+      </div>
+      <div class="phase-chips" id="phaseChips">
+        <span class="chip" data-phase="STATE">STATE</span>
+        <span class="chip" data-phase="WINDOW">WINDOW</span>
+        <span class="chip" data-phase="PICK">PICK</span>
+        <span class="chip" data-phase="COMMIT">COMMIT</span>
+        <span class="chip" data-phase="JUDGE">JUDGE</span>
+        <span class="chip" data-phase="CLEAR">CLEAR</span>
+      </div>
+      <div class="tabs">
+        <button class="tab on" data-tab="proto">协议消息</button>
+        <button class="tab" data-tab="fsm">状态机</button>
+        <button class="tab" data-tab="notes">说明</button>
+      </div>
+      <div class="tab-panel on" id="tab-proto"><div class="proto-log" id="protoLog"></div></div>
+      <div class="tab-panel" id="tab-fsm">
+        <div class="fsm">
+          <div class="fsm-row"><b>STATE</b><span>游戏发来：5 个字的笔画总数/已露笔数、40 个候选字（5 组 × 8）、当前投到第几个字、历史。答案不在消息里。</span></div>
+          <div class="fsm-row"><b>WINDOW</b><span>每个字单独开一个 3/5/7 秒窗口，观众从当前字的 8 个候选里投一个字；5 个字都投完再提交。</span></div>
+          <div class="fsm-row"><b>PICK</b><span>主播兜底：当前字 ≥2 个不同人、且占比 ≥30% 才听观众的；否则用推导话术里的 hostGuess（玩家脑）。</span></div>
+          <div class="fsm-row"><b>COMMIT</b><span>把选中的字填进当前格；5 个都填完后一次提交 5 个字。</span></div>
+          <div class="fsm-row"><b>JUDGE</b><span>ack 返回 pct；100% 通关，否则进入下一轮、多露一点笔画，重新逐字投。</span></div>
+          <div class="fsm-row"><b>CLEAR</b><span>成功 next_level；5 轮用完 retry_level 重玩本关；通关不做 3+2 讲解，直接下一关。</span></div>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-notes">
+        <div class="notes">
+          <h3>Game2 实际规则（来自代码）</h3>
+          <ul>
+            <li>每关 5 个目标字，40 个候选字（5 组 × 8，正确字在每组里）。</li>
+            <li>目标字的笔画只露 11% → 18% → 25% → 32% → 39%，每次猜错多露一点，最多 5 次机会。</li>
+            <li>一次填 5 个字提交，按位置权重算 0~99% 相似度；字对但位置错只给 30% 权重；全对才是 100%。</li>
+            <li>失败面板没有“重玩本关”，这一版按 Game1 的规则补成 retry_level。</li>
+          </ul>
+          <h3>这一版怎么改的</h3>
+          <ul>
+            <li><b>逐字投票</b>：每个字单独开一个窗口，观众从当前字的 8 个候选里投一个字；5 个字都投完，才一次提交。</li>
+            <li><b>通关不讲解</b>：不做 3 字义 + 2 字形，通关直接 <code>next_level</code>。</li>
+            <li><b>推导话术已入库</b>：<code>assets/game2/level/game2_scripts.json</code>，100 关 × 5 轮 × 5 字 = 2500 条，含每轮“露了什么笔画 / 我蒙哪个字 / 提交 / 百分比反应”。</li>
+            <li><b>31 关已按文档答案改游戏</b>：文档最终答案与游戏原答案不一致的 31 关，已把游戏答案改成文档答案，并补齐 42 个笔画文件；现在 100 关全部 <code>match:true</code>，推导话术可直接使用。</li>
+            <li><b>失败重玩</b>：5 轮用完 → <code>retry_level</code> 重玩本关；同一关连败 2 次，下一轮改主播单人。</li>
+          </ul>
+          <h3>和 Game1 的设计差异</h3>
+          <ul>
+            <li><b>动作</b>：Game1 一次落一个字；Game2 逐字投票、一次提交 5 个字。</li>
+            <li><b>观众</b>：Game1 每个 image 投一个字；Game2 每个位置投一个字，投 5 次再提交。</li>
+            <li><b>反馈</b>：Game1 只有 correct/wrong；Game2 有相似度百分比，可以“接近了”再试。</li>
+            <li><b>讲解</b>：Game1 有释义/出处；Game2 不做通关讲解，推导话术在猜的过程中说。</li>
+          </ul>
+          <h3>必须提前知道</h3>
+          <p>Game2 的 <code>idiom</code> 字段其实是 5 个随机汉字（第 1 关是“叔依始净松”），不是成语。它的内容价值在 <code>game2_scripts.json</code> 的“看笔画 → 蒙字”推导，不在成语释义。</p>
+          <h3>这页的边界</h3>
+          <p>这是中间层模拟：真实游戏还要补 <code>event/cmd</code>、把动作换成 5 字提交、加逐字投票期间的 pause/resume、把失败面板改成 retry。页面里的笔画来自真实关卡 JSON，候选字和推导话术也是真实配置。</p>
+          <p>演示页把“未露笔画”用很淡的颜色勾出来了，方便你看清画面；真实游戏只显示已露笔画，难度更高。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><b>说明：</b>Game2 与 Game1 共用同一套中间层；Game2 逐字投票、5 字提交、百分比反馈、通关不讲解，推导话术来自 <code>game2_scripts.json</code>。</div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const G2_DATA = {"levels": [{"id": 1, "answer": "叔依始净松", "characters": ["叔", "依", "始", "净", "松"], "options": [["叔", "表", "肯", "胃", "钙", "氛", "乳", "茉"], ["依", "俩", "味", "哀", "诡", "施", "待", "茶"], ["始", "绍", "抬", "洽", "经", "姑", "帖", "拍"], ["净", "幸", "绎", "奖", "烂", "送", "采", "抱"], ["松", "殴", "栋", "枪", "恨", "险", "柱", "炒"]], "strokes": {"叔": ["M 374 458 Q 378 539 383 615 L 384 644 Q 387 710 401 765 Q 405 777 383 792 Q 346 811 321 814 Q 305 818 296 809 Q 289 800 297 785 Q 319 757 320 735 Q 332 602 330 447 C 330 417 373 428 374 458 Z", "M 383 615 Q 428 609 491 628 Q 555 649 559 651 Q 566 661 561 669 Q 552 679 521 683 Q 497 684 428 655 Q 407 651 384 644 C 355 635 353 618 383 615 Z", "M 355 409 Q 421 425 504 436 Q 522 439 522 447 Q 523 460 504 471 Q 474 483 450 477 Q 408 467 374 458 L 330 447 Q 144 408 61 398 Q 48 397 44 388 Q 41 376 58 364 Q 101 334 145 350 Q 242 383 307 399 Q 308 400 314 400 L 355 409 Z", "M 314 400 Q 326 364 325 253 Q 326 138 315 110 Q 311 97 285 100 Q 261 104 236 107 Q 224 107 223 101 Q 222 94 233 85 Q 294 36 315 5 Q 330 -8 340 -6 Q 352 -2 363 33 Q 379 67 377 130 Q 377 278 381 332 Q 390 374 371 395 Q 362 404 355 409 C 332 428 307 429 314 400 Z", "M 178 279 Q 156 230 124 187 Q 103 154 120 118 Q 127 99 150 111 Q 202 147 203 219 Q 210 253 203 279 Q 197 288 191 289 Q 182 288 178 279 Z", "M 431 291 Q 482 218 507 214 Q 522 213 530 231 Q 533 244 524 266 Q 506 300 437 319 Q 427 322 426 309 Q 425 302 431 291 Z", "M 724 232 Q 772 314 815 457 Q 825 488 844 508 Q 863 524 848 538 Q 835 550 801 559 Q 776 565 749 548 Q 716 535 673 521 Q 628 508 555 499 Q 540 498 536 490 Q 532 483 551 475 Q 588 462 640 478 Q 716 505 731 504 Q 759 504 755 474 Q 731 342 687 271 L 660 229 Q 588 144 471 100 Q 458 94 470 88 Q 477 81 520 85 Q 613 94 691 187 L 724 232 Z", "M 691 187 Q 727 139 780 82 Q 808 55 852 59 Q 910 63 954 65 Q 967 66 981 71 Q 988 77 978 87 Q 963 97 845 147 Q 788 168 724 232 L 687 271 Q 644 320 598 384 Q 580 409 548 418 Q 536 422 526 416 Q 520 409 529 401 Q 536 394 543 389 Q 567 374 649 245 Q 653 238 660 229 L 691 187 Z"], "依": ["M 226 502 Q 275 563 326 650 Q 351 696 373 720 Q 383 732 377 746 Q 373 759 341 783 Q 313 802 292 802 Q 271 799 281 776 Q 296 745 285 719 Q 230 572 82 381 Q 72 371 70 363 Q 66 351 81 354 Q 111 360 203 472 L 226 502 Z", "M 203 472 Q 227 405 228 359 Q 219 224 217 209 Q 210 157 194 103 Q 184 58 218 7 Q 219 7 221 4 Q 239 -12 251 15 Q 266 55 265 102 Q 271 355 281 412 Q 288 439 279 450 Q 237 496 226 502 C 203 521 193 500 203 472 Z", "M 568 771 Q 602 744 639 712 Q 655 699 672 700 Q 684 701 689 716 Q 693 732 682 765 Q 675 787 637 804 Q 546 829 536 823 Q 530 819 533 805 Q 537 792 568 771 Z", "M 551 570 Q 651 591 760 612 Q 829 628 838 637 Q 847 644 843 652 Q 836 664 808 672 Q 780 678 750 667 Q 584 609 382 588 Q 346 582 371 566 Q 410 542 467 555 Q 483 559 504 561 L 551 570 Z", "M 545 469 Q 566 506 580 524 Q 587 528 585 539 Q 579 558 551 570 C 524 584 501 591 504 561 Q 517 486 406 339 Q 403 338 402 334 Q 368 292 285 211 Q 278 207 287 204 Q 347 216 445 323 Q 446 326 449 328 L 476 362 Q 501 398 535 452 L 545 469 Z", "M 449 328 Q 459 301 459 275 Q 460 161 451 124 Q 447 93 433 75 Q 418 53 428 30 Q 440 -4 458 -17 Q 468 -24 482 -5 Q 519 43 644 162 Q 662 178 663 186 Q 664 199 643 187 Q 591 156 533 120 Q 515 107 507 111 Q 500 115 499 134 Q 506 272 514 306 Q 520 327 505 339 Q 490 355 476 362 C 451 378 440 357 449 328 Z", "M 677 360 Q 734 399 812 457 Q 831 473 854 482 Q 875 492 865 509 Q 852 527 826 540 Q 804 553 790 551 Q 778 550 782 537 Q 785 506 725 439 Q 695 408 665 373 C 645 350 652 343 677 360 Z", "M 665 373 Q 631 410 595 452 Q 583 470 566 471 Q 553 472 545 469 C 515 465 513 465 535 452 Q 572 433 595 396 Q 784 137 820 126 Q 869 117 971 136 Q 987 137 993 146 Q 997 153 987 157 Q 828 221 750 289 Q 716 320 677 360 L 665 373 Z"], "始": ["M 313 194 Q 347 169 390 129 Q 406 116 415 114 Q 424 115 429 125 Q 435 135 429 165 Q 422 192 401 204 Q 382 217 342 236 L 302 256 Q 277 269 244 283 Q 225 292 227 310 Q 246 367 265 424 L 278 465 Q 306 559 329 654 Q 339 699 357 723 Q 370 744 363 756 Q 350 772 306 800 Q 287 813 271 804 Q 258 798 268 782 Q 301 731 235 456 L 224 412 Q 197 333 184 311 Q 175 289 195 273 Q 241 251 279 221 L 313 194 Z", "M 279 221 Q 272 214 266 204 Q 238 170 187 135 Q 175 126 159 118 Q 143 108 129 98 Q 116 91 127 87 Q 199 81 310 191 Q 311 192 313 194 L 342 236 Q 346 246 354 255 Q 382 303 395 361 Q 414 448 434 478 Q 444 494 429 503 Q 386 539 363 532 Q 350 529 355 515 Q 362 499 363 481 L 361 451 Q 360 441 359 426 Q 350 336 302 256 L 279 221 Z", "M 363 481 Q 321 474 278 465 L 235 456 Q 178 449 118 438 Q 97 434 64 439 Q 51 439 48 430 Q 44 418 53 409 Q 72 391 101 369 Q 111 365 123 372 Q 195 412 224 412 L 265 424 Q 311 437 361 451 C 390 459 393 486 363 481 Z", "M 788 484 Q 676 468 556 440 Q 544 436 540 439 Q 536 443 544 460 Q 676 682 705 719 Q 717 729 709 743 Q 702 756 650 777 Q 631 784 622 779 Q 609 772 616 751 Q 638 687 520 497 Q 496 458 446 421 Q 431 408 436 396 Q 443 378 471 358 Q 483 348 496 359 Q 541 393 806 459 C 835 466 818 488 788 484 Z", "M 806 459 Q 837 411 853 404 Q 860 403 869 410 Q 882 420 876 464 Q 873 503 807 542 Q 765 567 742 578 Q 735 584 730 573 Q 729 560 737 549 Q 761 521 788 484 L 806 459 Z", "M 526 267 Q 514 271 488 277 Q 476 280 473 275 Q 466 268 475 253 Q 506 187 523 81 Q 526 50 544 28 Q 562 6 567 21 Q 574 40 569 74 L 563 111 Q 547 205 543 235 C 539 263 539 263 526 267 Z", "M 795 146 Q 814 224 846 252 Q 862 271 847 289 Q 831 302 776 325 Q 757 332 736 323 Q 655 289 526 267 C 496 262 513 231 543 235 Q 571 238 721 272 Q 740 276 748 269 Q 758 260 758 240 Q 752 191 744 149 C 739 119 787 117 795 146 Z", "M 569 74 Q 575 74 582 75 Q 655 93 811 107 Q 823 108 824 118 Q 824 127 795 146 C 780 156 773 155 744 149 Q 743 149 742 149 Q 643 124 563 111 C 533 106 539 72 569 74 Z"], "净": ["M 177 645 Q 208 617 239 585 Q 252 572 268 571 Q 278 571 285 585 Q 289 600 282 629 Q 273 665 174 693 Q 158 697 152 695 Q 148 691 148 678 Q 151 668 177 645 Z", "M 277 444 Q 193 305 136 227 Q 123 211 110 214 Q 94 217 89 197 Q 88 170 103 150 Q 121 122 137 113 Q 150 106 161 109 Q 170 113 173 123 Q 182 169 197 206 Q 243 315 284 416 Q 294 435 292 444 Q 289 462 277 444 Z", "M 527 699 Q 569 762 587 777 Q 596 787 591 799 Q 588 811 563 832 Q 539 848 522 849 Q 506 848 512 828 Q 527 794 455 680 Q 421 628 375 572 Q 365 562 363 557 Q 360 547 373 549 Q 409 553 506 673 L 527 699 Z", "M 571 533 Q 683 653 727 680 Q 746 690 733 705 Q 720 718 681 741 Q 663 748 648 737 Q 638 733 557 707 Q 542 703 527 699 C 498 691 476 674 506 673 Q 533 670 616 686 Q 626 689 628 686 Q 632 682 625 670 Q 594 616 534 525 C 518 500 550 511 571 533 Z", "M 747 332 Q 757 381 770 412 L 790 459 Q 803 484 822 500 Q 840 519 824 538 Q 746 598 691 570 Q 633 548 578 535 Q 574 534 571 533 L 534 525 Q 467 513 403 506 Q 387 505 388 494 Q 391 485 410 479 Q 435 469 473 480 Q 495 484 518 488 L 561 498 Q 622 511 684 524 Q 711 531 721 520 Q 734 507 731 482 Q 727 464 724 446 L 715 408 Q 705 369 695 334 C 687 305 741 303 747 332 Z", "M 770 412 Q 810 415 921 416 Q 939 417 943 425 Q 947 435 933 447 Q 882 486 824 467 Q 808 464 790 459 L 724 446 Q 643 436 591 424 L 540 416 Q 431 401 311 384 Q 292 383 306 367 Q 319 355 335 350 Q 354 346 368 350 Q 450 375 544 388 L 595 396 Q 647 405 715 408 L 770 412 Z", "M 552 302 Q 470 287 397 278 Q 375 275 388 256 Q 395 246 407 242 Q 419 239 434 242 Q 480 254 554 264 L 604 271 Q 673 281 766 289 Q 778 290 780 301 Q 780 310 747 332 C 733 341 724 340 695 334 Q 647 325 602 313 L 552 302 Z", "M 518 488 Q 530 470 540 416 L 544 388 Q 548 348 552 302 L 554 264 Q 558 120 531 73 Q 528 67 522 65 Q 510 61 416 80 Q 409 80 406 77 Q 405 73 413 65 Q 479 11 513 -29 Q 523 -42 532 -40 Q 542 -39 563 -20 Q 609 25 610 152 Q 609 198 605 269 Q 604 270 604 271 L 602 313 Q 598 374 595 396 L 591 424 Q 588 482 577 489 Q 568 495 561 498 C 535 513 505 515 518 488 Z"], "松": ["M 331 516 Q 356 523 386 529 Q 426 539 432 545 Q 441 555 436 563 Q 427 576 396 583 Q 363 587 333 574 L 293 560 Q 196 530 117 520 Q 78 513 107 495 Q 152 471 212 488 Q 240 495 275 502 L 331 516 Z", "M 327 402 Q 328 456 331 516 L 333 574 Q 333 680 356 758 Q 366 773 363 786 Q 356 795 302 830 Q 280 846 259 832 Q 255 828 260 812 Q 293 761 293 712 Q 293 642 293 560 L 285 407 Q 281 332 280 252 Q 274 173 252 101 Q 239 59 265 2 Q 271 -16 279 -19 Q 285 -25 292 -17 Q 319 -1 320 62 Q 319 101 326 372 L 327 402 Z", "M 275 502 Q 218 361 54 154 Q 48 144 60 143 Q 67 142 76 150 Q 205 258 285 407 C 351 529 287 530 275 502 Z", "M 326 372 Q 396 302 404 299 L 407 299 Q 416 298 421 309 Q 425 321 421 345 Q 415 372 338 400 Q 331 401 327 402 C 298 408 305 393 326 372 Z", "M 509 572 Q 521 539 467 453 Q 466 452 465 450 Q 449 428 409 383 Q 402 377 411 376 Q 472 376 575 524 Q 579 530 583 533 Q 590 537 588 547 Q 579 572 544 582 Q 525 588 515 586 Q 508 583 509 572 Z", "M 613 719 Q 643 697 659 662 Q 741 514 809 410 Q 821 389 845 387 Q 933 381 968 384 Q 984 384 990 390 Q 994 396 986 401 Q 862 473 823 514 Q 759 578 671 715 Q 662 731 647 735 Q 619 741 608 732 Q 604 726 613 719 Z", "M 742 190 Q 649 180 549 160 Q 539 156 535 159 Q 532 171 620 302 Q 668 380 669 381 Q 663 397 605 421 Q 587 428 577 423 Q 564 416 572 394 Q 593 346 501 196 Q 479 169 441 141 Q 428 128 432 116 Q 438 98 466 78 Q 475 71 500 85 Q 548 115 734 160 Q 746 163 755 167 C 783 177 772 193 742 190 Z", "M 755 167 Q 800 80 811 74 Q 818 70 829 78 Q 845 88 845 134 Q 845 189 707 296 Q 700 303 694 292 Q 690 279 697 266 Q 719 232 742 190 L 755 167 Z"]}, "weights": [24, 18, 22, 16, 20], "rounds": [{"round": 1, "intro": "第1关来了家人们！5个8画的字，现在每个只露1笔，我挨个看啊——", "slots": [{"index": 0, "strokeDesc": "露了一笔横", "hostGuess": "叔", "line": "第一个字，露了一笔横……我蒙一个\"叔\"！"}, {"index": 1, "strokeDesc": "露了一笔点", "hostGuess": "哀", "line": "第二个字，露了一笔点……我蒙一个\"哀\"！"}, {"index": 2, "strokeDesc": "露了一笔横", "hostGuess": "经", "line": "第三个字，露了一笔横……我蒙一个\"经\"！"}, {"index": 3, "strokeDesc": "露了一笔横", "hostGuess": "净", "line": "第四个字，露了一笔横……我蒙一个\"净\"！"}, {"index": 4, "strokeDesc": "露了一笔提", "hostGuess": "栋", "line": "第五个字，露了一笔提……我蒙一个\"栋\"！"}], "submit": "叔哀经净栋", "pct": 34, "reaction": "……34%？还行，蒙对了几个！不过不是0，说明有字沾边了！下一轮加笔画再看！", "outro": []}, {"round": 2, "intro": "好第2轮，现在2笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加竖", "hostGuess": "叔", "line": "第一个字，横加竖……我选\"叔\"！"}, {"index": 1, "strokeDesc": "点加横", "hostGuess": "哀", "line": "第二个字，点加横……我选\"哀\"！"}, {"index": 2, "strokeDesc": "横加提", "hostGuess": "经", "line": "第三个字，横加提……我选\"经\"！"}, {"index": 3, "strokeDesc": "横加点", "hostGuess": "抱", "line": "第四个字，横加点……我选\"抱\"！"}, {"index": 4, "strokeDesc": "提加提", "hostGuess": "炒", "line": "第五个字，提加提……我选\"炒\"！"}], "submit": "叔哀经抱炒", "pct": 7, "reaction": "7%！还不行，再仔细看看！下一轮加笔画！", "outro": []}, {"round": 3, "intro": "好第3轮，现在2笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加竖", "hostGuess": "叔", "line": "第一个字，横加竖……我选\"叔\"！"}, {"index": 1, "strokeDesc": "点加横", "hostGuess": "哀", "line": "第二个字，点加横……我选\"哀\"！"}, {"index": 2, "strokeDesc": "横加提", "hostGuess": "经", "line": "第三个字，横加提……我选\"经\"！"}, {"index": 3, "strokeDesc": "横加点", "hostGuess": "抱", "line": "第四个字，横加点……我选\"抱\"！"}, {"index": 4, "strokeDesc": "提加提", "hostGuess": "松", "line": "第五个字，提加提……我选\"松\"！"}], "submit": "叔哀经抱松", "pct": 29, "reaction": "29%！有进步，继续调！下一轮加笔画！", "outro": []}, {"round": 4, "intro": "好第4轮，现在3笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加竖加竖", "hostGuess": "叔", "line": "第一个字，横加竖加竖……我选\"叔\"！"}, {"index": 1, "strokeDesc": "点加横加提", "hostGuess": "哀", "line": "第二个字，点加横加提……我选\"哀\"！"}, {"index": 2, "strokeDesc": "横加提加提", "hostGuess": "始", "line": "第三个字，横加提加提……我选\"始\"！"}, {"index": 3, "strokeDesc": "横加点加竖", "hostGuess": "抱", "line": "第四个字，横加点加竖……我选\"抱\"！"}, {"index": 4, "strokeDesc": "提加提加竖", "hostGuess": "松", "line": "第五个字，提加提加竖……我选\"松\"！"}], "submit": "叔哀始抱松", "pct": 64, "reaction": "64%！还不错，最后一轮再冲一把！就看最后一轮了！", "outro": []}, {"round": 5, "intro": "最后一轮！4笔全露了！我最后一搏——", "slots": [{"index": 0, "strokeDesc": "横加竖加竖加横", "hostGuess": "叔", "line": "第一个字，横加竖加竖加横……我确定\"叔\"！"}, {"index": 1, "strokeDesc": "点加横加提加提", "hostGuess": "依", "line": "第二个字，点加横加提加提……我确定\"依\"！"}, {"index": 2, "strokeDesc": "横加提加提加竖", "hostGuess": "始", "line": "第三个字，横加提加提加竖……我确定\"始\"！"}, {"index": 3, "strokeDesc": "横加点加竖加横", "hostGuess": "净", "line": "第四个字，横加点加竖加横……我确定\"净\"！"}, {"index": 4, "strokeDesc": "提加提加竖加提", "hostGuess": "松", "line": "第五个字，提加提加竖加提……我确定\"松\"！"}], "submit": "叔依始净松", "pct": 100, "reaction": "100%！！！过了家人们！最后一轮才过，太刺激了！", "outro": ["弹幕全对的扣666！点个关注下一关继续！"]}]}, {"id": 2, "answer": "京河泪呵刮", "characters": ["京", "河", "泪", "呵", "刮"], "options": [["京", "荣", "哀", "峦", "养", "思", "念", "荒"], ["河", "洪", "洋", "沾", "项", "拇", "泄", "拨"], ["泪", "泻", "沮", "洞", "拥", "勇", "疟", "矩"], ["呵", "坷", "哄", "咙", "明", "咱", "的", "咽"], ["刮", "毡", "赵", "秕", "牵", "氢", "卦", "秉"]], "strokes": {"京": ["M 456 811 Q 516 751 553 738 Q 572 735 582 752 Q 589 768 584 789 Q 566 838 495 852 Q 455 865 437 858 Q 430 857 434 841 Q 437 828 456 811 Z", "M 131 642 Q 106 639 124 619 Q 140 603 162 596 Q 187 589 206 595 Q 447 659 853 660 Q 878 660 902 659 Q 926 659 931 669 Q 938 682 919 699 Q 850 750 782 730 Q 557 691 131 642 Z", "M 333 538 Q 329 539 324 539 Q 311 540 309 536 Q 303 529 313 514 Q 344 462 368 373 Q 374 346 391 330 Q 410 311 414 326 Q 415 335 416 345 L 412 379 Q 411 382 383 498 C 376 527 363 534 333 538 Z", "M 660 401 Q 696 479 734 500 Q 753 519 739 539 Q 666 605 606 582 Q 438 531 333 538 C 303 539 353 494 383 498 Q 437 505 599 534 Q 624 538 634 529 Q 641 520 638 504 Q 622 452 606 412 C 595 384 647 374 660 401 Z", "M 527 359 Q 584 366 667 370 Q 677 371 679 380 Q 679 387 660 401 L 606 412 Q 605 413 603 412 Q 497 390 412 379 C 382 375 387 337 416 345 Q 432 351 478 353 L 527 359 Z", "M 443 59 Q 424 65 401 71 Q 389 75 389 68 Q 389 61 399 50 Q 453 -2 488 -45 Q 498 -55 514 -39 Q 551 12 553 110 Q 547 212 554 298 Q 561 325 555 335 Q 548 345 527 359 C 503 376 471 382 478 353 Q 488 320 493 212 Q 492 166 492 99 Q 491 68 480 57 Q 470 50 443 59 Z", "M 291 272 Q 254 214 207 166 Q 176 136 190 92 Q 194 71 221 80 Q 249 93 271 126 Q 299 165 308 202 Q 320 238 317 267 Q 313 277 307 279 Q 297 280 291 272 Z", "M 653 234 Q 711 180 780 103 Q 801 78 821 72 Q 831 71 841 83 Q 857 101 841 156 Q 834 186 812 207 Q 790 223 741 242 Q 686 264 654 273 Q 642 280 640 264 Q 639 246 653 234 Z"], "河": ["M 253 745 Q 275 726 301 701 Q 317 686 335 688 Q 347 689 352 704 Q 356 722 345 755 Q 338 774 308 785 Q 233 807 220 799 Q 214 795 217 780 Q 221 767 253 745 Z", "M 149 549 Q 195 503 231 490 Q 249 489 258 504 Q 264 520 259 539 Q 249 566 227 579 Q 191 597 143 597 Q 134 597 129 593 Q 122 592 126 577 Q 129 564 149 549 Z", "M 145 194 Q 132 190 135 172 Q 147 97 184 75 Q 191 68 202 71 Q 211 72 211 99 Q 217 142 309 383 Q 316 399 315 406 Q 314 416 305 409 Q 295 402 282 385 Q 230 303 183 232 Q 171 213 145 194 Z", "M 743 662 Q 813 668 927 669 Q 948 670 952 679 Q 958 691 940 705 Q 883 744 846 734 Q 711 703 344 647 Q 322 644 339 627 Q 370 599 411 608 Q 537 644 690 658 L 743 662 Z", "M 419 504 Q 406 508 380 512 Q 368 516 365 510 Q 358 504 367 488 Q 392 437 409 353 Q 413 328 428 311 Q 446 289 451 305 Q 455 315 454 332 L 451 365 Q 436 450 435 475 C 433 500 433 500 419 504 Z", "M 583 385 Q 601 455 622 477 Q 646 504 621 518 Q 602 530 573 548 Q 552 558 511 533 Q 472 517 419 504 C 390 497 406 467 435 475 Q 457 482 517 494 Q 538 498 543 490 Q 550 486 543 454 Q 536 423 528 384 C 522 355 575 356 583 385 Z", "M 454 332 Q 461 331 471 333 Q 511 342 601 349 Q 611 350 612 360 Q 612 367 583 385 C 568 395 557 392 528 384 Q 483 372 451 365 C 422 359 424 334 454 332 Z", "M 661 92 Q 639 102 609 111 Q 597 115 597 108 Q 596 101 606 89 Q 667 29 705 -19 Q 717 -29 732 -12 Q 775 42 774 125 Q 762 422 769 544 Q 770 572 773 600 Q 780 628 773 639 Q 766 649 743 662 C 718 678 677 685 690 658 Q 691 654 697 645 Q 709 620 708 577 Q 711 441 709 132 Q 708 101 698 90 Q 688 84 661 92 Z"], "泪": ["M 248 706 Q 273 681 301 650 Q 316 634 334 634 Q 346 634 352 649 Q 359 665 350 700 Q 346 721 313 738 Q 238 771 220 763 Q 214 759 215 744 Q 219 731 248 706 Z", "M 137 505 Q 194 445 228 432 Q 244 429 255 445 Q 261 458 257 478 Q 245 521 152 548 Q 151 549 150 549 Q 131 553 121 549 Q 114 548 118 534 Q 119 521 137 505 Z", "M 143 142 Q 130 138 132 119 Q 148 40 186 19 Q 193 12 204 15 Q 213 16 213 44 Q 220 96 329 382 Q 336 398 335 406 Q 334 416 325 409 Q 310 400 188 190 Q 175 166 143 142 Z", "M 473 665 Q 461 681 430 692 Q 420 696 407 692 Q 400 688 405 673 Q 426 588 427 580 Q 427 295 405 202 Q 372 153 422 85 Q 422 84 424 82 Q 436 67 447 81 Q 454 91 458 101 L 464 140 Q 468 170 468 217 Q 468 260 469 297 L 470 328 Q 471 392 474 443 L 475 473 Q 479 626 482 627 C 485 654 485 654 473 665 Z", "M 685 127 Q 722 81 749 39 Q 759 18 772 19 Q 791 20 808 59 Q 827 104 823 157 Q 810 311 801 597 Q 800 633 817 658 Q 827 674 817 685 Q 795 707 734 732 Q 713 742 696 731 Q 635 701 473 665 C 444 658 453 621 482 627 Q 507 631 680 673 Q 707 679 721 669 Q 760 630 743 189 Q 740 173 740 159 Q 736 144 726 144 C 710 119 668 149 685 127 Z", "M 474 443 Q 484 442 496 444 Q 596 466 670 479 Q 697 485 686 499 Q 673 515 643 519 Q 607 522 475 473 C 447 463 444 444 474 443 Z", "M 469 297 Q 470 297 680 324 Q 707 328 697 343 Q 685 359 655 366 Q 630 370 470 328 C 441 320 439 293 469 297 Z", "M 458 101 Q 465 100 478 102 Q 545 117 685 127 C 715 129 735 131 726 144 Q 722 154 694 173 Q 675 183 641 175 Q 544 153 464 140 C 434 135 428 102 458 101 Z"], "呵": ["M 129 591 Q 119 598 85 606 Q 73 610 69 605 Q 62 599 70 582 Q 98 510 109 395 Q 110 361 129 336 Q 145 314 151 329 Q 158 347 157 377 L 154 411 Q 138 528 137 562 C 136 587 136 587 129 591 Z", "M 301 441 Q 319 534 344 563 Q 366 590 343 604 Q 322 616 294 633 Q 276 645 229 618 Q 195 605 129 591 C 100 585 107 557 137 562 Q 155 565 232 581 Q 256 585 261 576 Q 270 569 263 531 Q 256 488 247 437 C 242 407 295 412 301 441 Z", "M 157 377 Q 164 377 172 379 Q 218 392 322 405 Q 332 406 333 416 Q 333 423 301 441 C 287 449 276 446 247 437 Q 195 421 154 411 C 125 404 127 375 157 377 Z", "M 752 679 Q 791 682 932 682 Q 954 682 960 692 Q 966 705 947 720 Q 887 763 847 753 Q 729 728 354 677 Q 330 674 348 655 Q 382 624 425 633 Q 566 672 702 676 L 752 679 Z", "M 434 507 Q 424 514 390 521 Q 378 525 375 520 Q 368 514 376 499 Q 401 441 412 347 Q 413 319 429 300 Q 445 278 451 293 Q 455 305 455 325 L 453 356 Q 441 449 440 478 C 439 505 439 505 434 507 Z", "M 593 380 Q 612 459 636 483 Q 658 508 636 522 Q 617 534 590 551 Q 571 561 553 550 Q 511 525 434 507 C 405 500 411 472 440 478 Q 447 479 456 482 Q 496 492 531 500 Q 555 506 560 496 Q 567 490 560 456 Q 553 420 543 379 C 536 350 586 351 593 380 Z", "M 455 325 Q 462 324 472 326 Q 515 336 610 347 Q 620 348 620 357 Q 620 364 593 380 C 578 389 572 387 543 379 Q 491 364 453 356 C 424 350 425 327 455 325 Z", "M 664 101 Q 642 108 614 116 Q 601 120 601 112 Q 601 103 611 92 Q 674 34 714 -14 Q 727 -24 742 -7 Q 790 51 785 137 Q 779 434 785 535 Q 786 572 790 608 Q 797 639 790 650 Q 781 663 752 679 C 727 695 691 704 702 676 Q 703 669 710 656 Q 722 629 721 585 Q 722 452 717 145 Q 716 111 704 99 Q 692 92 664 101 Z"], "刮": ["M 354 663 Q 450 702 492 709 Q 511 710 515 718 Q 519 730 506 743 Q 484 759 434 779 Q 418 788 403 786 Q 394 782 394 770 Q 394 727 189 633 Q 183 623 190 620 Q 208 620 317 651 L 354 663 Z", "M 379 499 Q 458 515 555 526 Q 573 527 573 536 Q 574 549 556 559 Q 528 572 505 566 Q 438 553 387 540 L 332 529 Q 170 499 70 488 Q 57 487 53 479 Q 50 467 66 456 Q 105 426 149 440 Q 255 473 330 489 L 379 499 Z", "M 362 368 Q 371 446 379 499 L 387 540 Q 394 580 399 592 Q 406 614 393 630 Q 375 649 354 663 C 329 680 308 680 317 651 Q 317 650 318 648 Q 334 596 332 529 L 330 489 Q 326 438 318 357 C 315 327 359 338 362 368 Z", "M 236 343 Q 223 349 195 352 Q 182 356 179 350 Q 172 343 182 327 Q 213 263 233 160 Q 237 129 255 108 Q 274 86 279 102 Q 286 123 280 163 L 273 201 Q 257 286 253 314 C 249 338 249 338 236 343 Z", "M 470 235 Q 489 299 511 318 Q 536 345 512 361 Q 491 374 462 394 Q 443 407 421 395 Q 393 379 362 368 L 318 357 Q 282 350 236 343 C 206 338 225 304 253 314 Q 256 318 380 342 Q 417 351 427 335 Q 434 329 426 299 Q 420 271 413 238 C 407 209 461 206 470 235 Z", "M 280 163 Q 287 163 298 165 Q 358 181 488 197 Q 500 198 501 209 Q 501 218 470 235 L 413 238 L 412 238 Q 336 214 273 201 C 244 195 250 161 280 163 Z", "M 599 599 Q 632 521 611 335 Q 604 302 635 261 Q 645 251 655 262 Q 679 301 674 346 Q 668 490 676 568 Q 683 592 661 604 Q 645 614 626 623 Q 613 627 603 622 Q 594 615 599 599 Z", "M 793 725 Q 797 688 792 116 Q 791 91 778 82 Q 772 79 708 96 Q 672 112 674 100 Q 675 91 696 74 Q 760 13 774 -19 Q 790 -56 807 -59 Q 823 -60 841 -22 Q 863 29 863 112 Q 830 610 872 755 Q 891 789 828 814 Q 791 833 769 826 Q 750 819 767 793 Q 791 763 793 725 Z"]}, "weights": [24, 18, 22, 16, 20], "rounds": [{"round": 1, "intro": "第2关来了家人们！5个8画的字，现在每个只露1笔，我挨个看啊——", "slots": [{"index": 0, "strokeDesc": "露了一笔横", "hostGuess": "峦", "line": "第一个字，露了一笔横……我蒙一个\"峦\"！"}, {"index": 1, "strokeDesc": "露了一笔横", "hostGuess": "河", "line": "第二个字，露了一笔横……我蒙一个\"河\"！"}, {"index": 2, "strokeDesc": "露了一笔横", "hostGuess": "泪", "line": "第三个字，露了一笔横……我蒙一个\"泪\"！"}, {"index": 3, "strokeDesc": "露了一笔竖", "hostGuess": "坷", "line": "第四个字，露了一笔竖……我蒙一个\"坷\"！"}, {"index": 4, "strokeDesc": "露了一笔竖", "hostGuess": "刮", "line": "第五个字，露了一笔竖……我蒙一个\"刮\"！"}], "submit": "峦河泪坷刮", "pct": 55, "reaction": "……55%？不错，对了不少！不过不是0，说明有字沾边了！下一轮加笔画再看！", "outro": []}, {"round": 2, "intro": "好第2轮，现在2笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加横", "hostGuess": "荣", "line": "第一个字，横加横……我选\"荣\"！"}, {"index": 1, "strokeDesc": "横加竖", "hostGuess": "河", "line": "第二个字，横加竖……我选\"河\"！"}, {"index": 2, "strokeDesc": "横加提", "hostGuess": "泪", "line": "第三个字，横加提……我选\"泪\"！"}, {"index": 3, "strokeDesc": "竖加横", "hostGuess": "坷", "line": "第四个字，竖加横……我选\"坷\"！"}, {"index": 4, "strokeDesc": "竖加横", "hostGuess": "刮", "line": "第五个字，竖加横……我选\"刮\"！"}], "submit": "荣河泪坷刮", "pct": 55, "reaction": "55%！涨了不少！说明改对了好几个！下一轮加笔画！", "outro": []}, {"round": 3, "intro": "好第3轮，现在2笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加横", "hostGuess": "荣", "line": "第一个字，横加横……我选\"荣\"！"}, {"index": 1, "strokeDesc": "横加竖", "hostGuess": "河", "line": "第二个字，横加竖……我选\"河\"！"}, {"index": 2, "strokeDesc": "横加提", "hostGuess": "勇", "line": "第三个字，横加提……我选\"勇\"！"}, {"index": 3, "strokeDesc": "竖加横", "hostGuess": "坷", "line": "第四个字，竖加横……我选\"坷\"！"}, {"index": 4, "strokeDesc": "竖加横", "hostGuess": "刮", "line": "第五个字，竖加横……我选\"刮\"！"}], "submit": "荣河勇坷刮", "pct": 48, "reaction": "48%！有进步，继续调！下一轮加笔画！", "outro": []}, {"round": 4, "intro": "好第4轮，现在3笔了！我重新看——", "slots": [{"index": 0, "strokeDesc": "横加横加点", "hostGuess": "荣", "line": "第一个字，横加横加点……我选\"荣\"！"}, {"index": 1, "strokeDesc": "横加竖加横", "hostGuess": "河", "line": "第二个字，横加竖加横……我选\"河\"！"}, {"index": 2, "strokeDesc": "横加提加横", "hostGuess": "泪", "line": "第三个字，横加提加横……我选\"泪\"！"}, {"index": 3, "strokeDesc": "竖加横加横", "hostGuess": "坷", "line": "第四个字，竖加横加横……我选\"坷\"！"}, {"index": 4, "strokeDesc": "竖加横加横", "hostGuess": "刮", "line": "第五个字，竖加横加横……我选\"刮\"！"}], "submit": "荣河泪坷刮", "pct": 55, "reaction": "55%！还不错，最后一轮再冲一把！就看最后一轮了！", "outro": []}, {"round": 5, "intro": "最后一轮！4笔全露了！我最后一搏——", "slots": [{"index": 0, "strokeDesc": "横加横加点加提", "hostGuess": "京", "line": "第一个字，横加横加点加提……我确定\"京\"！"}, {"index": 1, "strokeDesc": "横加竖加横加竖", "hostGuess": "河", "line": "第二个字，横加竖加横加竖……我确定\"河\"！"}, {"index": 2, "strokeDesc": "横加提加横加竖", "hostGuess": "泪", "line": "第三个字，横加提加横加竖……我确定\"泪\"！"}, {"index": 3, "strokeDesc": "竖加横加横加竖", "hostGuess": "呵", "line": "第四个字，竖加横加横加竖……我确定\"呵\"！"}, {"index": 4, "strokeDesc": "竖加横加横加横", "hostGuess": "刮", "line": "第五个字，竖加横加横加横……我确定\"刮\"！"}], "submit": "京河泪呵刮", "pct": 100, "reaction": "100%！！！过了家人们！最后一轮才过，太刺激了！", "outro": ["弹幕全对的扣666！点个关注下一关继续！"]}]}]};
+  const RATIOS = [0.11, 0.18, 0.25, 0.32, 0.39];
+  const MAX_ATTEMPTS = 5;
+  const PACES = {
+    fast: { sec: 3, buffer: 0.6 },
+    normal: { sec: 5, buffer: 0.9 },
+    slow: { sec: 7, buffer: 1.2 },
+  };
+  const NAMES = ["三哥", "阿茶", "晚风", "柚子", "不吃香菜", "9527", "路过的", "小陈", "木木", "老白", "momo", "小满的猫"];
+  const NOISE = ["666", "主播加油", "？", "再想想", "这个字好难", "哈哈哈哈"];
+  const ABORT = Symbol("abort");
+
+  const state = {
+    gen: 0, running: false, speed: 1, pace: "normal", mode: "audience", policy: "host",
+    levelIdx: 0, level: null, attempt: 0, slotIndex: 0, maxAttempts: MAX_ATTEMPTS,
+    slots: [null, null, null, null, null], candidates: [], orders: {},
+    revealAll: false, success: false, history: [], votes: [], votedUsers: new Set(),
+    phase: "STATE", forceWrong: 0, skip: false, speechGen: 0, stateSeq: 0, actionSeq: 0,
+    failStreak: 0, soloLevel: false, levelStart: 0, viewers: 4,
+    stats: { audience: 0, bestPct: 0 },
+  };
+
+  const $ = (s) => document.querySelector(s);
+  const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+  const clamp = (n, a = 0, b = 10) => Math.max(a, Math.min(b, n));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms / state.speed)));
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const formatTime = (ms) => {
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  };
+  const check = (gen) => { if (gen !== state.gen) throw ABORT; };
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function hashString(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function revealOrder(char, total) {
+    const indices = [];
+    for (let i = 0; i < total; i++) indices.push(i);
+    const rand = mulberry32(hashString(char));
+    for (let i = total - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    return indices;
+  }
+
+  const currentLevel = () => G2_DATA.levels[state.levelIdx % G2_DATA.levels.length];
+  const currentRound = () => state.level.rounds[Math.min(state.attempt, state.level.rounds.length - 1)];
+
+  function logProto(obj, kind) {
+    const log = $("#protoLog");
+    const line = document.createElement("div");
+    line.className = "proto-line " + (kind === "ack bad" ? "ack bad" : kind);
+    line.innerHTML = '<span class="badge-type">' + escapeHtml(obj.type || kind.split(" ")[0]) + "</span><code>" + escapeHtml(JSON.stringify(obj)) + "</code>";
+    log.appendChild(line);
+    while (log.children.length > 70) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function setPhase(name) {
+    state.phase = name;
+    document.querySelectorAll("#phaseChips .chip").forEach((c) => c.classList.toggle("active", c.dataset.phase === name));
+    $("#phaseNow").textContent = name;
+  }
+
+  function buildCandidates(level) {
+    const flat = [];
+    let id = 0;
+    for (let g = 0; g < level.options.length; g++) {
+      for (const ch of level.options[g]) flat.push({ id: id++, char: ch, group: g, used: false });
+    }
+    return shuffle(flat);
+  }
+
+  function visibleCount(char, attempt) {
+    const total = state.level.strokes[char].length;
+    if (state.revealAll) return total;
+    const ratio = RATIOS[Math.min(attempt, RATIOS.length - 1)];
+    return Math.max(1, Math.min(Math.ceil(total * ratio), Math.max(1, total - 2)));
+  }
+
+  function renderHanzi() {
+    const row = $("#hanziRow");
+    row.innerHTML = "";
+    state.level.characters.forEach((ch) => {
+      const total = state.level.strokes[ch].length;
+      const order = state.orders[ch];
+      const count = visibleCount(ch, state.attempt);
+      const card = document.createElement("div");
+      card.className = "hanzi-card";
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "-60 -60 1144 1144");
+      if (!state.revealAll) {
+        for (const idx of order) {
+          const ghost = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          ghost.setAttribute("d", state.level.strokes[ch][idx]);
+          ghost.setAttribute("fill", "#2b2118");
+          ghost.setAttribute("opacity", "0.07");
+          svg.appendChild(ghost);
+        }
+      }
+      for (const idx of order.slice(0, count)) {
+        const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("d", state.level.strokes[ch][idx]);
+        p.setAttribute("fill", "#2b2118");
+        svg.appendChild(p);
+      }
+      const lbl = document.createElement("div");
+      lbl.className = "stroke-count";
+      lbl.textContent = count + "/" + total + "笔";
+      card.appendChild(svg);
+      card.appendChild(lbl);
+      row.appendChild(card);
+    });
+  }
+
+  function renderSlots() {
+    $("#slots").innerHTML = state.slots.map((s, i) =>
+      '<div class="slot' + (s ? " filled" : "") + (!s && i === state.slotIndex ? " active" : "") + '">' + escapeHtml(s || "") + "</div>"
+    ).join("");
+  }
+
+  function renderCandidates() {
+    const focusing = state.slotIndex < 5 && !state.slots[state.slotIndex];
+    $("#candidates").innerHTML = state.candidates.map((t) => {
+      const active = focusing && t.group === state.slotIndex && !t.used;
+      const dim = focusing && t.group !== state.slotIndex && !t.used;
+      return '<div class="cand' + (t.used ? " used" : "") + (active ? " active" : "") + (dim ? " dim" : "") +
+        '" data-id="' + t.id + '" data-char="' + escapeHtml(t.char) + '" data-group="' + t.group + '">' + escapeHtml(t.char) + "</div>";
+    }).join("");
+  }
+
+  function renderHint() {
+    if (state.slotIndex >= 5) {
+      $("#hintLine").textContent = "5 个字都选好了，提交";
+      return;
+    }
+    const slot = currentRound().slots[state.slotIndex];
+    $("#hintLine").textContent = "第 " + (state.slotIndex + 1) + "/5 字 · " + slot.strokeDesc + " · 深色=已露";
+  }
+
+  function renderHistory() {
+    $("#history").innerHTML = state.history.map((h) =>
+      '<div class="hist-row"><span>第' + h.round + '轮 <b>' + escapeHtml(h.guess.join("")) + "</b></span><span class=\"pct" + (h.pct >= 80 ? " good" : "") + '">' + h.pct + "%</span></div>"
+    ).join("");
+  }
+
+  function renderAttempts() {
+    const round = Math.min(state.attempt + 1, state.maxAttempts);
+    $("#attemptLabel").textContent = "第 " + round + "/" + state.maxAttempts + " 轮";
+    $("#hearts").textContent = "❤".repeat(Math.max(0, state.maxAttempts - state.attempt)) + "🖤".repeat(Math.min(state.maxAttempts, state.attempt));
+    $("#mAttempt").textContent = round + "/" + state.maxAttempts;
+  }
+
+  function renderAll() {
+    $("#levelLabel").textContent = "第 " + state.level.id + " 关";
+    $("#mBest").textContent = state.stats.bestPct + "%";
+    $("#mAudience").textContent = state.stats.audience;
+    renderHanzi(); renderSlots(); renderCandidates(); renderHint(); renderHistory(); renderAttempts();
+    if (state.levelStart) $("#mTime").textContent = formatTime(performance.now() - state.levelStart);
+  }
+
+  function emitState() {
+    state.stateSeq++;
+    const lv = state.level;
+    logProto({
+      type: "state", v: 2, seq: state.stateSeq, levelId: lv.id,
+      attempt: state.attempt, round: state.attempt + 1, maxAttempts: state.maxAttempts,
+      characters: lv.characters.map((ch, i) => ({
+        index: i, totalStrokes: lv.strokes[ch].length, visibleStrokes: visibleCount(ch, state.attempt),
+      })),
+      currentSlot: state.slotIndex,
+      groups: lv.options,
+      candidates: "40 项（省略）",
+      slots: state.slots.map((s, i) => ({ index: i, filled: !!s })),
+      history: state.history.map((h) => ({ round: h.round, guess: h.guess.join(""), pct: h.pct })),
+      deadlineMs: 30000,
+    }, "state");
+  }
+
+  function addChat(user, content, opts = {}) {
+    const feed = $("#chat");
+    const line = document.createElement("div");
+    line.className = "chat-line" + (opts.system ? " system" : "") + (user === "你" ? " mine" : "");
+    line.innerHTML = opts.system ? "<span>" + escapeHtml(content) + "</span>"
+      : '<span class="chat-name">' + escapeHtml(user) + "</span><span>" + escapeHtml(content) + "</span>";
+    feed.appendChild(line);
+    while (feed.children.length > 40) feed.removeChild(feed.firstChild);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  let speechChain = Promise.resolve();
+  function speak(text) {
+    const gen = state.speechGen;
+    const charMs = Math.max(32, 50 / Math.sqrt(state.speed));
+    const holdMs = Math.max(200, 350 / Math.sqrt(state.speed));
+    speechChain = speechChain.then(async () => {
+      if (gen !== state.speechGen) return;
+      const node = $("#speech");
+      node.textContent = "";
+      for (const ch of text) {
+        if (gen !== state.speechGen) return;
+        node.textContent += ch;
+        await new Promise((r) => setTimeout(r, charMs));
+      }
+      await new Promise((r) => setTimeout(r, holdMs));
+    }).catch(() => {});
+    return speechChain;
+  }
+
+  function recordVote(user, char) {
+    const group = state.level.options[state.slotIndex] || [];
+    if (!group.includes(char)) return;
+    if (state.votedUsers.has(user)) return;
+    state.votedUsers.add(user);
+    state.votes.push({ user, char });
+    state.stats.audience++;
+    $("#mAudience").textContent = state.stats.audience;
+    document.querySelectorAll('.cand[data-group="' + state.slotIndex + '"]').forEach((el) => {
+      if (el.dataset.char === char) {
+        el.classList.add("flash");
+        setTimeout(() => el.classList.remove("flash"), 380);
+      }
+    });
+  }
+
+  function startAudience(slotIndex) {
+    const gen = state.gen;
+    const group = state.level.options[slotIndex];
+    const correct = state.level.answer[slotIndex];
+    const tick = () => {
+      if (gen !== state.gen || state.phase !== "WINDOW" || state.slotIndex !== slotIndex) return;
+      const name = rnd(NAMES);
+      if (Math.random() < 0.1) {
+        addChat(name, rnd(NOISE));
+      } else {
+        const ch = Math.random() < 0.32 ? correct : rnd(group);
+        addChat(name, ch);
+        recordVote(name, ch);
+        if (Math.random() < 0.3) {
+          const n = 1 + Math.floor(Math.random() * 2);
+          for (let i = 0; i < n; i++) {
+            const n2 = rnd(NAMES);
+            addChat(n2, ch);
+            recordVote(n2, ch);
+          }
+        }
+      }
+      setTimeout(tick, (400 + Math.random() * 700) / state.speed);
+    };
+    setTimeout(tick, 220);
+  }
+
+  function tallyChar() {
+    const map = new Map();
+    for (const v of state.votes) {
+      if (!map.has(v.char)) map.set(v.char, new Set());
+      map.get(v.char).add(v.user);
+    }
+    let top = null;
+    for (const [char, users] of map) {
+      if (!top || users.size > top.users) top = { char, users: users.size };
+    }
+    return { top, total: state.votedUsers.size };
+  }
+
+  function playerChar(i) {
+    const lv = state.level;
+    const round = lv.rounds[Math.min(state.attempt, lv.rounds.length - 1)];
+    if (state.soloLevel || state.attempt >= 4) return lv.answer[i];
+    return (round.slots[i] && round.slots[i].hostGuess) || lv.answer[i];
+  }
+
+  function pickChar(i) {
+    if (state.forceWrong > 0) {
+      state.forceWrong--;
+      const group = state.level.options[i];
+      const player = playerChar(i);
+      const wrong = group.find((c) => c !== player) || group[0];
+      return { char: wrong, by: "audience", voters: 0, rule: "演示强制猜错" };
+    }
+    if (state.mode === "legacy" || state.soloLevel) {
+      return { char: playerChar(i), by: "player", voters: 0, rule: "玩家脑" };
+    }
+    const t = tallyChar();
+    if (state.policy === "audience" && t.top) return { char: t.top.char, by: "audience", voters: t.top.users, rule: "全听观众的" };
+    if (t.top && t.top.users >= 2 && t.top.users / Math.max(1, t.total) >= 0.3) {
+      return { char: t.top.char, by: "audience", voters: t.top.users, rule: "观众票数达标" };
+    }
+    return { char: playerChar(i), by: "player", voters: t.top ? t.top.users : 0, rule: t.top ? "主播兜底" : "没人投票，玩家脑" };
+  }
+
+  function fillSlot(i, char) {
+    let tile = state.candidates.find((t) => t.group === i && t.char === char && !t.used);
+    if (!tile) tile = state.candidates.find((t) => t.char === char && !t.used);
+    if (tile) tile.used = true;
+    state.slots[i] = char;
+    state.slotIndex = i + 1;
+    renderSlots(); renderCandidates(); renderHint();
+  }
+
+  async function countdown(sec, gen) {
+    let remain = sec;
+    $("#timerWrap").classList.add("show");
+    while (remain > 0.01) {
+      $("#timerText").textContent = Math.ceil(remain) + "s";
+      $("#timerBar").style.width = (remain / sec) * 100 + "%";
+      await sleep(100); check(gen);
+      remain -= 0.1;
+      if (state.skip) { state.skip = false; break; }
+    }
+    $("#timerWrap").classList.remove("show");
+  }
+
+  async function openSlotWindow(i, gen) {
+    state.slotIndex = i;
+    state.votes = [];
+    state.votedUsers = new Set();
+    setPhase("WINDOW");
+    renderSlots(); renderCandidates(); renderHint();
+    const slot = currentRound().slots[i];
+    const pace = PACES[state.pace] || PACES.normal;
+    speak("第" + (i + 1) + "个字，" + slot.strokeDesc + "……你们说是什么字？");
+    addChat("系统", "第 " + (i + 1) + "/5 字 · " + pace.sec + " 秒", { system: true });
+    await sleep(pace.buffer * 1000); check(gen);
+    startAudience(i);
+    await countdown(pace.sec, gen); check(gen);
+    setPhase("PICK");
+    const d = pickChar(i);
+    logProto({ type: "decision", decidedBy: d.by, char: d.char, slotIndex: i, voters: d.voters, rule: d.rule }, "decision");
+    if (d.by === "audience") speak(rnd(["好，" + d.char + "！", d.char + "，听你们的。", "行，" + d.char + "！"]));
+    else speak("我选" + d.char + "！");
+    fillSlot(i, d.char);
+    await sleep(250); check(gen);
+  }
+
+  function computePct(guess) {
+    const ans = state.level.answer.split("");
+    let sum = 0, all = true;
+    for (let i = 0; i < 5; i++) {
+      if (guess[i] === ans[i]) sum += state.level.weights[i];
+      else {
+        all = false;
+        if (ans.includes(guess[i])) sum += state.level.weights[i] * 0.3;
+      }
+    }
+    return all ? 100 : Math.max(0, Math.min(99, Math.round(sum)));
+  }
+
+  async function submitRound(gen) {
+    setPhase("COMMIT");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "resume" }, "cmd");
+    speak("提交！" + state.slots.join("") + "！");
+    await sleep(300); check(gen);
+    state.actionSeq++;
+    logProto({ type: "action", seq: state.actionSeq, stateSeq: state.stateSeq, guess: [...state.slots], submit: true }, "action");
+    await sleep(550); check(gen);
+    setPhase("JUDGE");
+    const pct = computePct(state.slots);
+    state.history.push({ round: state.attempt + 1, guess: [...state.slots], pct });
+    state.stats.bestPct = Math.max(state.stats.bestPct, pct);
+    logProto({
+      type: "ack", seq: state.actionSeq, stateSeq: state.stateSeq,
+      result: pct === 100 ? "correct" : "wrong", pct,
+      attempt: state.attempt + 1, remainingAttempts: state.maxAttempts - state.attempt - 1,
+    }, pct === 100 ? "ack" : "ack bad");
+    renderHistory(); renderAttempts();
+    $("#mBest").textContent = state.stats.bestPct + "%";
+
+    if (pct === 100) {
+      state.success = true;
+      state.revealAll = true;
+      renderHanzi();
+      logProto({ type: "event", event: "level_clear", levelId: state.level.id, attemptsUsed: state.attempt + 1, bestPct: 100 }, "event");
+      const outro = (currentRound().outro || []).filter(Boolean);
+      speak(outro[0] || "100%！过了，下一关。");
+      return true;
+    }
+
+    state.attempt++;
+    if (state.attempt >= state.maxAttempts) return false;
+    state.slots = [null, null, null, null, null];
+    state.candidates.forEach((t) => { t.used = false; });
+    state.slotIndex = 0;
+    renderAll();
+    speak("百分之 " + pct + "，" + (pct >= 60 ? "很接近了" : "方向还不对") + "，下一轮多露一点笔画。");
+    await sleep(650); check(gen);
+    return false;
+  }
+
+  async function levelClear(gen) {
+    setPhase("CLEAR");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "next_level" }, "cmd");
+    showOverlay("第 " + state.level.id + " 关 · 通过", (state.attempt + 1) + " 轮 · 最高 100%", "cmd: next_level → 进入下一关");
+    await sleep(1700); check(gen);
+    hideOverlay();
+  }
+
+  async function levelFail(gen) {
+    setPhase("CLEAR");
+    state.failStreak++;
+    if (state.failStreak >= 2) state.soloLevel = true;
+    logProto({ type: "event", event: "level_fail", levelId: state.level.id, reason: "attempts", attempt: state.failStreak }, "event");
+    logProto({ type: "cmd", seq: ++state.actionSeq, op: "retry_level" }, "cmd");
+    speak(state.failStreak >= 2 ? "五轮机会都用完了，这关我自己来。" : "五轮机会都用完了，这关重来。");
+    showOverlay("机会用完 · 重玩本关", "本关第 " + state.failStreak + " 次失败", state.soloLevel ? "连败 2 次 · 下一轮主播单人" : "cmd: retry_level");
+    await sleep(2200); check(gen);
+    hideOverlay();
+  }
+
+  async function playLevel(gen, idx) {
+    state.levelIdx = idx;
+    state.level = currentLevel();
+    state.attempt = 0;
+    state.slotIndex = 0;
+    state.slots = [null, null, null, null, null];
+    state.history = [];
+    state.votes = [];
+    state.votedUsers = new Set();
+    state.revealAll = false;
+    state.success = false;
+    state.stats = { audience: 0, bestPct: 0 };
+    state.candidates = buildCandidates(state.level);
+    state.orders = {};
+    for (const ch of state.level.characters) state.orders[ch] = revealOrder(ch, state.level.strokes[ch].length);
+    state.levelStart = performance.now();
+    renderAll();
+
+    while (state.attempt < state.maxAttempts && !state.success) {
+      const round = currentRound();
+      state.slots = [null, null, null, null, null];
+      state.candidates.forEach((t) => { t.used = false; });
+      state.slotIndex = 0;
+      renderAll();
+      emitState();
+      speak(round.intro);
+      logProto({ type: "cmd", seq: ++state.actionSeq, op: "pause", reason: "vote", levelId: state.level.id, round: state.attempt + 1 }, "cmd");
+      await sleep(300); check(gen);
+      for (let i = 0; i < 5; i++) {
+        await openSlotWindow(i, gen);
+        check(gen);
+      }
+      const ok = await submitRound(gen);
+      check(gen);
+      if (ok) state.success = true;
+    }
+
+    if (state.success) {
+      await levelClear(gen);
+      state.failStreak = 0;
+      state.soloLevel = false;
+      return true;
+    }
+    await levelFail(gen);
+    return false;
+  }
+
+  async function runDemo(gen) {
+    try {
+      let idx = 0;
+      while (state.running && gen === state.gen) {
+        const cleared = await playLevel(gen, idx);
+        check(gen);
+        if (cleared) idx = (idx + 1) % G2_DATA.levels.length;
+      }
+    } catch (e) {
+      if (e !== ABORT) console.error(e);
+    }
+  }
+
+  function showOverlay(title, sub, tag) {
+    $("#overlayTitle").textContent = title;
+    $("#overlaySub").textContent = sub;
+    $("#overlayTag").textContent = tag;
+    $("#overlay").classList.add("show");
+  }
+  function hideOverlay() { $("#overlay").classList.remove("show"); }
+
+  function updateMood() {
+    const exc = state.phase === "WINDOW" ? 6 : 5;
+    const fr = state.attempt >= 3 ? 6 : 2;
+    const fo = state.phase === "WINDOW" || state.phase === "COMMIT" ? 7 : 4;
+    $("#moodExcite").style.width = clamp(exc) * 10 + "%";
+    $("#moodFrust").style.width = clamp(fr) * 10 + "%";
+    $("#moodFocus").style.width = clamp(fo) * 10 + "%";
+    $("#moodExciteVal").textContent = exc;
+    $("#moodFrustVal").textContent = fr;
+    $("#moodFocusVal").textContent = fo;
+    $("#hostMode").textContent = "状态：" + (state.phase === "WINDOW" ? "专注" : "社交");
+  }
+
+  function restart() {
+    state.gen++;
+    state.running = false;
+    state.speechGen++;
+    state.skip = false;
+    state.forceWrong = 0;
+    state.stateSeq = 0;
+    state.actionSeq = 0;
+    state.failStreak = 0;
+    state.soloLevel = false;
+    setPhase("STATE");
+    hideOverlay();
+    $("#protoLog").innerHTML = "";
+    $("#chat").innerHTML = "";
+    $("#speech").textContent = "";
+    $("#timerWrap").classList.remove("show");
+    state.levelIdx = 0;
+    state.level = currentLevel();
+    state.attempt = 0;
+    state.slotIndex = 0;
+    state.slots = [null, null, null, null, null];
+    state.history = [];
+    state.candidates = buildCandidates(state.level);
+    state.orders = {};
+    for (const ch of state.level.characters) state.orders[ch] = revealOrder(ch, state.level.strokes[ch].length);
+    state.stats = { audience: 0, bestPct: 0 };
+    state.levelStart = performance.now();
+    renderAll();
+    updateMood();
+    addChat("系统", "直播间已连接 · 看笔画猜五个字", { system: true });
+    addChat("三哥", "这次一个一个猜？");
+    addChat("晚风", "先看第一个字");
+    const gen = state.gen;
+    state.running = true;
+    setTimeout(() => runDemo(gen), 500);
+  }
+
+  document.querySelectorAll("[data-speed]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.speed = Number(btn.dataset.speed);
+      document.querySelectorAll("[data-speed]").forEach((b) => b.classList.toggle("on", b === btn));
+    });
+  });
+  $("#paceSelect").addEventListener("change", (e) => { state.pace = e.target.value; restart(); });
+  $("#modeSelect").addEventListener("change", (e) => { state.mode = e.target.value; restart(); });
+  $("#policySelect").addEventListener("change", (e) => { state.policy = e.target.value; restart(); });
+  $("#wrongBtn").addEventListener("click", () => {
+    state.forceWrong++;
+    addChat("系统", "（演示）下一个字故意选错", { system: true });
+  });
+  $("#skipBtn").addEventListener("click", () => { if (state.phase === "WINDOW") state.skip = true; });
+  $("#restartBtn").addEventListener("click", restart);
+
+  $("#chatForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $("#chatInput");
+    const text = input.value.trim();
+    if (!text) return;
+    addChat("你", text);
+    if (state.phase === "WINDOW") {
+      const group = state.level.options[state.slotIndex] || [];
+      const ch = (text.match(/[\u4e00-\u9fa5]/g) || []).find((c) => group.includes(c));
+      if (ch) recordVote("你", ch);
+    }
+    input.value = "";
+  });
+
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === tab));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("on", p.id === "tab-" + tab.dataset.tab));
+    });
+  });
+
+  setInterval(() => {
+    if (state.running && state.levelStart) $("#mTime").textContent = formatTime(performance.now() - state.levelStart);
+    updateMood();
+  }, 500);
+
+  window.__demo2 = { state, restart, data: G2_DATA };
+  restart();
+})();
+</script>
+</body>
+</html>
