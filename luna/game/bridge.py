@@ -26,6 +26,7 @@ from collections import Counter
 from websockets.asyncio.server import serve
 
 from luna.core.message import build as build_message
+from luna.game.host_brain import HostBrain
 from luna.infra.my_log import logger
 
 DEFAULT_SCRIPTS = r"C:\Users\97550\Desktop\大鹅抓成语AI\assets\game1\levels\game1_scripts.json"
@@ -42,6 +43,7 @@ TTS_WAIT_LIMIT = float(os.environ.get("GAME_BRIDGE_TTS_WAIT", "120"))
 class GameBridge:
     def __init__(self, my_handle):
         self.my_handle = my_handle
+        self.host_brain = HostBrain(my_handle)
         self.questions: dict[tuple[int, int], dict] = {}
         self.game2_levels: dict[int, dict] = {}
         self.plans: dict[int, dict] = {}
@@ -181,9 +183,15 @@ class GameBridge:
             self.last_state_seq = 0
             self.last_level = level
             self.solo_announced = False
-            await self._speak(f"第{level}关，开始。")
+            await self._host_say(
+                f"第{level}关，开始。",
+                {"game": "game1", "level": level, "event": "level_start"},
+            )
             if self.solo_level == level:
-                await self._speak("这一关主播单人挑战，弹幕先休息。")
+                await self._host_say(
+                    "这一关主播单人挑战，弹幕先休息。",
+                    {"game": "game1", "level": level, "event": "solo_start", "solo": True},
+                )
                 self.solo_announced = True
         if seq <= self.last_state_seq:
             return
@@ -268,7 +276,10 @@ class GameBridge:
         if level != self.last_level:
             self.last_state_seq = 0
             self.last_level = level
-            await self._speak(f"第{level}关，开始。")
+            await self._host_say(
+                f"第{level}关，开始。",
+                {"game": "game2", "level": level, "event": "level_start"},
+            )
         if seq <= self.last_state_seq:
             return
         self.last_state_seq = int(seq)
@@ -346,20 +357,35 @@ class GameBridge:
         result = message.get("result")
         pct = message.get("pct")
         if result == "correct":
-            await self._speak("对了，100%。")
+            await self._host_say(
+                "对了，100%。",
+                {"game": "game2", "pct": 100, "event": "correct"},
+            )
             return
         if result == "rejected":
-            await self._speak("这轮没提交上。")
+            await self._host_say(
+                "这轮没提交上。",
+                {"game": "game2", "event": "rejected"},
+            )
             return
         if pct is None:
             return
         pct = int(pct)
         if pct >= 80:
-            await self._speak(f"{pct}%，很接近了。")
+            await self._host_say(
+                f"{pct}%，很接近了。",
+                {"game": "game2", "pct": pct, "event": "guess"},
+            )
         elif pct >= 50:
-            await self._speak(f"{pct}%，对了一半。")
+            await self._host_say(
+                f"{pct}%，对了一半。",
+                {"game": "game2", "pct": pct, "event": "guess"},
+            )
         else:
-            await self._speak(f"{pct}%，还没对上。")
+            await self._host_say(
+                f"{pct}%，还没对上。",
+                {"game": "game2", "pct": pct, "event": "guess"},
+            )
 
     async def _on_game2_event(self, event: dict) -> None:
         name = event.get("event")
@@ -369,13 +395,19 @@ class GameBridge:
             return
         if name == "level_fail":
             self.last_state_seq = 0
-            await self._speak("没过，重来。")
+            await self._host_say(
+                "没过，重来。",
+                {"game": "game2", "event": "fail"},
+            )
             await asyncio.sleep(0.6)
             await self._send_command("retry_level")
             return
         if name == "all_clear":
             self.last_state_seq = 0
-            await self._speak("全部通关了。")
+            await self._host_say(
+                "全部通关了。",
+                {"game": "game2", "event": "all_clear"},
+            )
 
     async def _send_game2_fill(self, state_seq: int, slot: int, char: str) -> None:
         if self.ws is None:
@@ -422,7 +454,10 @@ class GameBridge:
             if self.solo_level == level:
                 self.solo_level = None
                 self.solo_announced = False
-            await self._speak(f"第{level}关过了，下一关。")
+            await self._host_say(
+                f"第{level}关过了，下一关。",
+                {"game": "game1", "level": level, "event": "level_clear"},
+            )
             await asyncio.sleep(1.0)
             await self._send_command("next_level")
             return
@@ -434,11 +469,17 @@ class GameBridge:
                 self.fail_streak[level] = 0
                 self.solo_level = level + 1
                 self.solo_announced = False
-                await self._speak("这关连败两次，下一关主播单人。")
+                await self._host_say(
+                    "这关连败两次，下一关主播单人。",
+                    {"game": "game1", "level": level, "event": "solo_next"},
+                )
                 await asyncio.sleep(0.5)
                 await self._send_command("next_level")
                 return
-            await self._speak("这关没过，重来。")
+            await self._host_say(
+                "这关没过，重来。",
+                {"game": "game1", "level": level, "event": "fail"},
+            )
             await asyncio.sleep(1.2)
             await self._send_command("retry_level")
             return
@@ -447,7 +488,10 @@ class GameBridge:
             self.fail_streak.clear()
             self.solo_level = None
             self.solo_announced = False
-            await self._speak("全部通关了。")
+            await self._host_say(
+                "全部通关了。",
+                {"game": "game1", "event": "all_clear"},
+            )
 
     async def _talk_question(self, level: int, item: int) -> None:
         question = self.questions.get((level, item))
@@ -494,6 +538,21 @@ class GameBridge:
         logger.info(f"[GAME_BRIDGE] cmd -> {op}")
 
     # ---------- 语音 ----------
+    async def _host_say(self, fallback: str, context: dict | None = None, wait: bool = False) -> None:
+        """主播话术位：LLM 成功就替换，失败/超时回退模板。"""
+        text = fallback
+        if self.host_brain is not None and self.host_brain.enabled:
+            try:
+                generated = await asyncio.wait_for(
+                    self.host_brain.say(context or {}),
+                    timeout=2.8,
+                )
+                if generated:
+                    text = generated
+            except Exception:
+                text = fallback
+        await self._speak(text, wait=wait)
+
     async def _speak(self, text: str, wait: bool = False) -> None:
         text = (text or "").strip()
         if not text:

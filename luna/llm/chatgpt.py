@@ -113,6 +113,16 @@ class Chatgpt:
         """
         max_length = len(self.data_openai["api_key"]) - 1
 
+        kwargs = {
+            "model": self.data_chatgpt["model"],
+            "messages": messages,
+            "timeout": 30,
+        }
+        if self.data_chatgpt.get("max_tokens") is not None:
+            kwargs["max_tokens"] = self.data_chatgpt["max_tokens"]
+        if self.data_chatgpt.get("temperature") is not None:
+            kwargs["temperature"] = self.data_chatgpt["temperature"]
+
         try:
             openai.api_base = self.data_openai["api"]
 
@@ -132,7 +142,7 @@ class Chatgpt:
             # 判断openai库版本，1.x.x和0.x.x有破坏性更新
             if version.parse(openai.__version__) < version.parse("1.0.0"):
                 # 调用 ChatGPT 接口生成回复消息
-                resp = openai.ChatCompletion.create(model=self.data_chatgpt["model"], messages=messages, timeout=30)
+                resp = openai.ChatCompletion.create(**kwargs)
 
                 resp = resp["choices"][0]["message"]["content"]
             else:
@@ -140,7 +150,7 @@ class Chatgpt:
 
                 client = openai.OpenAI(base_url=openai.api_base, api_key=openai.api_key)
                 # 调用 ChatGPT 接口生成回复消息
-                resp = client.chat.completions.create(model=self.data_chatgpt["model"], messages=messages, timeout=30)
+                resp = client.chat.completions.create(**kwargs)
 
                 resp = resp.choices[0].message.content
         # 处理 OpenAIError 异常
