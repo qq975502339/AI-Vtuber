@@ -11,6 +11,7 @@ import asyncio
 import os
 import re
 from copy import deepcopy
+from pathlib import Path
 
 from luna.infra.my_log import logger
 from luna.llm.chatgpt import Chatgpt
@@ -23,10 +24,11 @@ class HostBrain:
         self.enabled = bool(cfg.get("enabled"))
         self.timeout = float(cfg.get("timeout", 2.5))
         self.max_chars = int(cfg.get("max_chars", 40))
-        self.max_tokens = int(cfg.get("max_tokens", 128))
-        self.temperature = float(cfg.get("temperature", 0.9))
+        self.max_tokens = int(cfg.get("max_tokens", 96))
+        self.temperature = float(cfg.get("temperature", 0.85))
         self.persona = str(cfg.get("persona", "林小满"))
-        self.system_prompt = str(cfg.get("system_prompt", ""))
+        self.heart_dir = Path(cfg.get("heart_dir") or (Path(__file__).resolve().parent / "heart"))
+        self.system_prompt = self._load_heart() or str(cfg.get("system_prompt", ""))
         self.chat: Chatgpt | None = None
 
         if not self.enabled:
@@ -50,6 +52,18 @@ class HostBrain:
             f"timeout={self.timeout}s max_chars={self.max_chars}"
         )
 
+    def _load_heart(self) -> str:
+        if not self.heart_dir or not self.heart_dir.exists():
+            return ""
+        parts = []
+        for name in ("我是谁.md", "边界.md", "给我的建议.md"):
+            path = self.heart_dir / name
+            if path.exists():
+                text = path.read_text(encoding="utf-8").strip()
+                if text:
+                    parts.append(text)
+        return "\n\n".join(parts)
+
     def _prompt(self, context: dict) -> str:
         game = context.get("game", "")
         level = context.get("level")
@@ -58,6 +72,8 @@ class HostBrain:
         lives = context.get("lives")
         solo = context.get("solo")
         last = context.get("last") or []
+        votes = context.get("votes") or {}
+        guess = context.get("guess")
 
         parts = []
         if game == "game1":
@@ -70,13 +86,17 @@ class HostBrain:
             parts.append(f"当前事件：{event}")
         if pct is not None:
             parts.append(f"本轮猜测相似度 {pct}%")
+        if guess:
+            parts.append(f"你刚提交的猜测是：{guess}")
+        if votes:
+            parts.append("当前弹幕投票：" + "，".join(f"{u}投{v}" for u, v in votes.items()))
         if lives is not None:
             parts.append(f"剩余生命 {lives}")
         if solo:
             parts.append("本关是主播单人关，观众不参与")
         if last:
             parts.append("最近弹幕：" + " / ".join(str(x) for x in last[-3:]))
-        parts.append(f"请以{self.persona}的口吻说一句临场反应")
+        parts.append(f"请以{self.persona}的口吻，说一句自然的临场反应，别像念稿")
         return "；".join(parts) + "。"
 
     def _clean(self, text: str | None) -> str | None:
@@ -109,3 +129,13 @@ class HostBrain:
             logger.warning("[GAME_BRIDGE] LLM 主播话术失败，回退模板")
             return None
         return self._clean(text)
+
+    def remember(self, text: str) -> None:
+        """把真实发生的事写进“过去的事”，下一次开播能带上。"""
+        if not self.heart_dir or not self.heart_dir.exists() or not text:
+            return
+        try:
+            with (self.heart_dir / "过去的事.md").open("a", encoding="utf-8") as f:
+                f.write(f"\n- {text}")
+        except Exception:
+            logger.warning("[GAME_BRIDGE] 写入主播记忆失败")
