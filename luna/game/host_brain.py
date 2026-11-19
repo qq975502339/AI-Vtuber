@@ -72,6 +72,7 @@ class HostBrain:
         lives = context.get("lives")
         solo = context.get("solo")
         last = context.get("last") or []
+        last_host = context.get("last_host") or []
         votes = context.get("votes") or {}
         guess = context.get("guess")
 
@@ -96,7 +97,9 @@ class HostBrain:
             parts.append("本关是主播单人关，观众不参与")
         if last:
             parts.append("最近弹幕：" + " / ".join(str(x) for x in last[-3:]))
-        parts.append(f"请以{self.persona}的口吻，说一句自然的临场反应，别像念稿")
+        if last_host:
+            parts.append("你最近说过：" + " / ".join(str(x) for x in last_host[-2:]) + "；不要重复这些句子")
+        parts.append(f"请以{self.persona}的口吻，说一句自然的临场反应，别像念稿，别报游戏按钮")
         return "；".join(parts) + "。"
 
     def _clean(self, text: str | None) -> str | None:
