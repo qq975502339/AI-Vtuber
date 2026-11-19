@@ -37,6 +37,7 @@ PORT = int(os.environ.get("GAME_BRIDGE_PORT", "9001"))
 WINDOW_SECONDS = float(os.environ.get("GAME1_WINDOW", "6"))
 GAME2_WINDOW_SECONDS = float(os.environ.get("GAME2_WINDOW", "10"))
 TTS_ENABLE = os.environ.get("GAME_BRIDGE_TTS", "1") != "0"
+SKIP_3PLUS2 = os.environ.get("GAME_BRIDGE_SKIP_3PLUS2", "0") == "1"
 TTS_WAIT_LIMIT = float(os.environ.get("GAME_BRIDGE_TTS_WAIT", "120"))
 
 
@@ -199,7 +200,10 @@ class GameBridge:
             self.last_level = level
             self.recent_comments.clear()
             self.solo_announced = False
-            await self._speak(f"第{level}关，五个图，老规矩。")
+            await self._host_say(
+                f"第{level}关，五个图，老规矩。",
+                {"game": "game1", "level": level, "event": "level_start"},
+            )
             if self.solo_level == level:
                 await self._host_say(
                     "行，这关我自己来，弹幕先歇着。",
@@ -238,23 +242,35 @@ class GameBridge:
         if element_type == "image":
             if self.solo_level == level:
                 # 单人关：不弹观众窗口，主播直接选
-                await self._speak(self._choose_fmt([
+                solo_line = self._choose_fmt([
                     "第{slot}个，{char}，这把我自己来。",
                     "{char}，就它了。",
                     "{char}，稳。",
-                ], key="g1solo", slot=slot + 1, char=char), wait=True)
+                ], key="g1solo", slot=slot + 1, char=char)
+                await self._host_say(
+                    solo_line,
+                    {"game": "game1", "level": level, "event": "solo_pick", "char": char,
+                     "slot": slot + 1, "solo": True, "required": [char]},
+                    wait=True,
+                )
                 await self._send_action(int(seq), char, slot)
             else:
                 await self._guess_image(state, slot, char)
         else:
-            await self._speak(self._choose_fmt([
+            text_line = self._choose_fmt([
                 "这个不绕，直接{char}。",
                 "这个简单，{char}。",
                 "不卖关子，{char}。",
-            ], key="g1text", char=char), wait=True)
+            ], key="g1text", char=char)
+            await self._host_say(
+                text_line,
+                {"game": "game1", "level": level, "event": "text", "char": char, "required": [char]},
+                wait=True,
+            )
             await self._send_action(int(seq), char, slot)
 
     async def _guess_image(self, state: dict, slot: int, answer_char: str) -> None:
+        level = int(state.get("levelId", 0))
         pool = {c.get("char") for c in (state.get("charPool") or []) if c.get("available")}
         if answer_char not in pool:
             logger.warning(f"[GAME_BRIDGE] 答案字不可用：{answer_char}")
@@ -268,7 +284,12 @@ class GameBridge:
             "第{slot}个，看图猜字，{sec}秒，猜中的扣1。",
             "第{slot}个图，{sec}秒，别停。",
         ], key="g1ask", slot=slot + 1, sec=int(WINDOW_SECONDS))
-        await self._speak(ask, wait=True)
+        await self._host_say(
+            ask,
+            {"game": "game1", "level": level, "event": "ask", "slot": slot + 1,
+             "seconds": int(WINDOW_SECONDS), "required": [str(slot + 1)]},
+            wait=True,
+        )
         await asyncio.sleep(WINDOW_SECONDS)
         with self.vote_lock:
             self.window_open = False
@@ -284,7 +305,12 @@ class GameBridge:
             ], key="g1pick", voter=voter, pick=pick)
         else:
             line = self._choose([f"这字我选{pick}。", f"{pick}，试试看。"])
-        await self._speak(line, wait=True)
+        await self._host_say(
+            line,
+            {"game": "game1", "level": level, "event": "pick", "pick": pick,
+             "votes": votes, "required": [pick]},
+            wait=True,
+        )
         await self._send_action(int(state.get("seq", 0)), pick, slot)
 
     def _pick(self, votes: dict[str, str], fallback: str) -> str:
@@ -312,7 +338,10 @@ class GameBridge:
             self.last_state_seq = 0
             self.last_level = level
             self.recent_comments.clear()
-            await self._speak(f"第{level}关，五个字，老规矩，弹幕帮我盯第一笔。")
+            await self._host_say(
+                f"第{level}关，五个字，老规矩，弹幕帮我盯第一笔。",
+                {"game": "game2", "level": level, "event": "level_start"},
+            )
         if seq <= self.last_state_seq:
             return
         self.last_state_seq = int(seq)
@@ -344,7 +373,12 @@ class GameBridge:
                 "第{slot}个，先看这一笔，{desc}，十秒，猜中的扣1。",
                 "来，第{slot}个字，{desc}，十秒，别停。",
             ], key="g2ask", slot=slot + 1, desc=desc)
-            await self._speak(ask, wait=True)
+            await self._host_say(
+                ask,
+                {"game": "game2", "level": level, "event": "ask", "slot": slot + 1,
+                 "desc": desc, "seconds": 10, "required": [str(slot + 1)]},
+                wait=True,
+            )
             logger.info(f"[GAME_BRIDGE] Game2 窗口开始 slot={slot}")
             await asyncio.sleep(GAME2_WINDOW_SECONDS)
             with self.vote_lock:
@@ -361,7 +395,12 @@ class GameBridge:
                 ], key="g2pick", voter=voter, pick=pick)
             else:
                 line = self._choose_fmt(["这字我看{pick}。", "{pick}，试试看。"], key="g2pick", pick=pick)
-            await self._speak(line, wait=True)
+            await self._host_say(
+                line,
+                {"game": "game2", "level": level, "event": "pick", "pick": pick,
+                 "votes": votes, "required": [pick]},
+                wait=True,
+            )
             await self._send_game2_fill(int(seq), slot, pick)
             await asyncio.sleep(0.2)
             picks.append(pick)
@@ -550,6 +589,12 @@ class GameBridge:
         question = self.questions.get((level, item))
         if not question:
             return
+        if SKIP_3PLUS2:
+            await self._host_say(
+                f"第{item + 1}题过了。",
+                {"game": "game1", "level": level, "event": "question", "item": item + 1},
+            )
+            return
         plan = self._plan(level)
         texts = []
         if item in plan["meaning"] and question.get("meaning"):
@@ -557,15 +602,23 @@ class GameBridge:
         if item in plan["origin"] and question.get("origin"):
             texts.append(question["origin"])
         if not texts:
-            await self._speak(self._choose(["这张没得讲，下一张。", "这张跳过，下一张。"], key="g1skip"))
+            skip_line = self._choose(["这张没得讲，下一张。", "这张跳过，下一张。"], key="g1skip")
+            await self._host_say(
+                skip_line,
+                {"game": "game1", "level": level, "event": "question", "item": item + 1},
+            )
             await asyncio.sleep(0.5)
             return
         await self._send_command("pause")
-        await self._speak(self._choose_fmt([
+        question_line = self._choose_fmt([
             "第{item}题稳了，来，讲两句。",
             "第{item}题过了，这张有点意思。",
             "好，第{item}题拿下，听我说。",
-        ], key="g1question", item=item + 1))
+        ], key="g1question", item=item + 1)
+        await self._host_say(
+            question_line,
+            {"game": "game1", "level": level, "event": "question", "item": item + 1},
+        )
         for text in texts:
             await self._speak(text)
         await self._wait_playback()
@@ -608,7 +661,9 @@ class GameBridge:
                     timeout=2.8,
                 )
                 if generated and generated not in self.last_host_lines:
-                    text = generated
+                    required = [str(r) for r in (context.get("required") or [])]
+                    if all(r in generated for r in required):
+                        text = generated
             except Exception:
                 text = fallback
         await self._speak(text, wait=wait)

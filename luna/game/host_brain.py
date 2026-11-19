@@ -94,11 +94,28 @@ class HostBrain:
         if lives is not None:
             parts.append(f"剩余生命 {lives}")
         if solo:
-            parts.append("本关是主播单人关，观众不参与")
+            parts.append("这一关观众不参与，主播自己来；不要说“单人关”这三个字")
         if last:
             parts.append("最近弹幕：" + " / ".join(str(x) for x in last[-3:]))
         if last_host:
             parts.append("你最近说过：" + " / ".join(str(x) for x in last_host[-2:]) + "；不要重复这些句子")
+        if event == "level_start":
+            parts.append("这是关卡开始，说一句自然开场，不要编关卡名字")
+        elif event == "ask":
+            slot = context.get("slot")
+            seconds = context.get("seconds")
+            parts.append(f"这是第{slot}个，邀请观众猜，必须提到“第{slot}个”和“{seconds}秒”，不要改")
+        elif event == "pick":
+            pick = context.get("pick")
+            parts.append(f"你选的是{pick}，必须说出{pick}，不要用“我选”")
+        elif event == "solo_pick":
+            char = context.get("char")
+            parts.append(f"这一关观众不参与，你自己来，必须说出{char}；不要说“单人关”这三个字，不要报“我选”")
+        elif event == "text":
+            char = context.get("char")
+            parts.append(f"直接落字{char}，必须说出{char}")
+        elif event == "question":
+            parts.append("这一题过了，说一句自然过渡，3+2 由程序念，不要抢")
         parts.append(f"请以{self.persona}的口吻，说一句自然的临场反应，别像念稿，别报游戏按钮")
         return "；".join(parts) + "。"
 
@@ -110,6 +127,8 @@ class HostBrain:
         text = re.sub(r"[*#`>]", "", text)
         text = text.strip().strip('"“”')
         text = re.sub(r"\s+", " ", text).strip()
+        if "单人关" in text:
+            return None
         if text.startswith("我选") or text.startswith("这个直接给"):
             return None
         if len(text) > self.max_chars:
