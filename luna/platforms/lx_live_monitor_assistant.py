@@ -32,6 +32,41 @@ def listen_addr(config):
     return (ip or DEFAULT_WS_IP), port
 
 
+def _as_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def gift_amount_from(data_json):
+    """礼物的数量 / 单价 / 总价。
+
+    老助手（游猴扒页面文字）只有礼物名，升级前一直按「1 个 / 0 元」记；
+    会带结构化的第三方采集器（如 cyber-xiaoya-danmaku 的桥接）可以额外给
+    ``num`` / ``unit_price`` / ``total_price``，这里认就完事——给不了仍落回旧行为，
+    别让老用户升级后突然被「礼物感谢最低值」挡掉。
+    """
+    num = max(1, _as_int(data_json.get("num"), 1))
+    unit_price = max(0.0, _as_float(data_json.get("unit_price"), 0.0))
+    total_price = max(0.0, _as_float(data_json.get("total_price"), 0.0))
+
+    if total_price <= 0 and unit_price > 0:
+        total_price = unit_price * num
+    if unit_price <= 0 and total_price > 0:
+        unit_price = total_price / num
+
+    # 钱按两位小数收口，别把 0.30000000000000004 写进积分表/数据库
+    return num, round(unit_price, 2), round(total_price, 2)
+
+
 def gift_name_from(data_json):
     """从助手推的礼物消息里取礼物名，新旧两种脚本的形状都认。
 
@@ -92,20 +127,60 @@ def start_listen(config, common, my_handle, platform: str):
 
                     logger.info(f"[🎁直播间礼物消息] {username} 送出 {gift_name}")
 
+                    num, unit_price, total_price = gift_amount_from(data_json)
+
                     data = {
                         "platform": platform,
                         "username": username,
                         "gift_name": gift_name,
-                        # 助手是从直播间网页上扒的文字，既没数量也没价格。
-                        # 价格记 0，所以「感谢最低值」大于 0 时这条路不会播报礼物感谢，
+                        # 助手只扒页面文字时这两个值取不到 → 仍然是「1 个 / 0 元」，
+                        # 所以「感谢最低值」大于 0 时这条路不会播报礼物感谢，
                         # 要用就把 thanks.lowest_price 设成 0；积分/按键映射/自定义命令
                         # 这些按礼物名走的逻辑不受影响。
-                        "num": 1,
-                        "unit_price": 0,
-                        "total_price": 0,
+                        "num": num,
+                        "unit_price": unit_price,
+                        "total_price": total_price,
                     }
 
                     my_handle.process_data(data, "gift")
+
+                elif data_json["type"] == "entrance":
+                    # 进场：Luna 的入场感谢文案由 thanks.entrance_copy 决定，
+                    # 这里只负责把「谁进来了」送进那条流水线
+                    my_global.idle_time_auto_clear(config, "entrance")
+
+                    username = data_json.get("username") or ""
+                    if not username:
+                        logger.warning(f"进场消息里没有用户名，跳过：{data_json}")
+                        continue
+
+                    logger.info(f"[🚪直播间进场消息] {username} 进入直播间")
+
+                    data = {
+                        "platform": platform,
+                        "username": username,
+                        "content": "进入直播间",
+                    }
+
+                    my_handle.process_data(data, "entrance")
+                    my_global.add_username_to_last_username_list(username)
+
+                elif data_json["type"] == "follow":
+                    my_global.idle_time_auto_clear(config, "follow")
+
+                    username = data_json.get("username") or ""
+                    if not username:
+                        logger.warning(f"关注消息里没有用户名，跳过：{data_json}")
+                        continue
+
+                    logger.info(f"[⭐直播间关注消息] {username} 关注了主播")
+
+                    data = {
+                        "platform": platform,
+                        "username": username,
+                    }
+
+                    my_handle.process_data(data, "follow")
 
                 else:
                     # like（点赞）也在推，但本程序没有点赞这条流水线：

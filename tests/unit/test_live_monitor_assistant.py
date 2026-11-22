@@ -245,9 +245,89 @@ def test_like_is_ignored_without_breaking_the_stream(monkeypatch):
 
 
 def test_an_unlisted_type_is_ignored(monkeypatch):
-    handle = _feed(monkeypatch, {"type": "entrance", "username": "壬"})
+    handle = _feed(monkeypatch, {"type": "unknown_event", "username": "壬"})
 
     assert handle.batches == []
+
+
+# ---------- 进场 / 关注 / 礼物的数量与价格 ----------
+
+
+def test_entrance_goes_to_the_entrance_pipeline(monkeypatch):
+    """入场感谢走 thanks.entrance_copy，得有「谁进来了」才会播。"""
+    handle = _feed(monkeypatch, {"type": "entrance", "username": "观众子"})
+
+    assert handle.batches == [
+        (
+            "entrance",
+            {
+                "platform": "live_monitor_assistant",
+                "username": "观众子",
+                "content": "进入直播间",
+            },
+        )
+    ]
+
+
+def test_follow_goes_to_the_follow_pipeline(monkeypatch):
+    handle = _feed(monkeypatch, {"type": "follow", "username": "观众丑"})
+
+    assert handle.batches == [
+        (
+            "follow",
+            {
+                "platform": "live_monitor_assistant",
+                "username": "观众丑",
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize("typename", ["entrance", "follow"])
+def test_an_event_without_a_username_is_skipped(monkeypatch, typename):
+    """没用户名的进场/关注只会让感谢文案出现一个空洞，不如丢掉。"""
+    handle = _feed(monkeypatch, {"type": typename, "username": ""})
+
+    assert handle.batches == []
+
+
+def test_structured_gift_carries_its_count_and_price(monkeypatch):
+    """会带 num/unit_price/total_price 的采集器（桥接）让礼物感谢按真实价值分档。"""
+    handle = _feed(
+        monkeypatch,
+        {
+            "type": "gift",
+            "username": "观众寅",
+            "gift": "小心心",
+            "num": 3,
+            "unit_price": 0.1,
+            "total_price": 0.3,
+        },
+    )
+
+    _flag, data = handle.batches[0]
+    assert (data["num"], data["unit_price"], data["total_price"]) == (3, 0.1, 0.3)
+
+
+def test_gift_price_is_filled_in_when_only_one_side_is_given(monkeypatch):
+    """只给单价或只给总价都要能算出另一个，别把 0 元记进积分表。"""
+    handle = _feed(
+        monkeypatch,
+        {"type": "gift", "username": "观众卯", "gift": "火箭", "num": 2, "unit_price": 5},
+        {"type": "gift", "username": "观众辰", "gift": "火箭", "num": 2, "total_price": 10},
+    )
+
+    first, second = (data for _flag, data in handle.batches)
+    assert first["total_price"] == 10.0
+    assert second["unit_price"] == 5.0
+
+
+@pytest.mark.parametrize("num", ["2", None, "", "abc", 0, -3])
+def test_a_broken_gift_count_never_goes_below_one(monkeypatch, num):
+    """数量是自由文本里来的，0 或非数字会让「x0」这种念法出现。"""
+    handle = _feed(monkeypatch, {"type": "gift", "username": "观众巳", "gift": "花", "num": num})
+
+    assert handle.batches[0][1]["num"] >= 1
 
 
 def test_broken_json_alarms_and_keeps_listening(monkeypatch):
