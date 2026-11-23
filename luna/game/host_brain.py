@@ -151,13 +151,3 @@ class HostBrain:
             logger.warning("[GAME_BRIDGE] LLM 主播话术失败，回退模板")
             return None
         return self._clean(text)
-
-    def remember(self, text: str) -> None:
-        """把真实发生的事写进“过去的事”，下一次开播能带上。"""
-        if not self.heart_dir or not self.heart_dir.exists() or not text:
-            return
-        try:
-            with (self.heart_dir / "过去的事.md").open("a", encoding="utf-8") as f:
-                f.write(f"\n- {text}")
-        except Exception:
-            logger.warning("[GAME_BRIDGE] 写入主播记忆失败")

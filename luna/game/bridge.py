@@ -479,12 +479,10 @@ class GameBridge:
         name = event.get("event")
         if name == "level_clear":
             self.last_state_seq = 0
-            self._remember(f"Game2 第{event.get('levelId')}关过了")
             await self._send_command("next_level")
             return
         if name == "level_fail":
             self.last_state_seq = 0
-            self._remember(f"Game2 第{event.get('levelId')}关没过")
             await self._host_say(
                 "没过，再来一把。",
                 {"game": "game2", "event": "fail"},
@@ -541,7 +539,6 @@ class GameBridge:
         if name == "level_clear":
             self.last_state_seq = 0
             self.fail_streak[level] = 0
-            self._remember(f"Game1 第{level}关过了")
             if self.solo_level == level:
                 self.solo_level = None
                 self.solo_announced = False
@@ -555,7 +552,6 @@ class GameBridge:
         if name == "level_fail":
             self.last_state_seq = 0
             self.fail_streak[level] = self.fail_streak.get(level, 0) + 1
-            self._remember(f"Game1 第{level}关失败，第{self.fail_streak[level]}次")
             if self.fail_streak[level] >= 2:
                 # 同一关连败 2 次：不再重玩，进下一关并改成主播单人
                 self.fail_streak[level] = 0
@@ -705,13 +701,6 @@ class GameBridge:
                 "嗯……没人说话，那我先自己念叨两句。",
                 {"game": self.game_kind or "game1", "event": "idle"},
             )
-
-    def _remember(self, text: str) -> None:
-        if self.host_brain is not None:
-            try:
-                self.host_brain.remember(text)
-            except Exception:
-                pass
 
     async def _filler(self) -> None:
         self.filler_last = time.time()

@@ -10,6 +10,8 @@
 import asyncio
 import json
 import os
+import tempfile
+from pathlib import Path
 
 os.environ["GAME_BRIDGE_TTS"] = "0"
 os.environ["GAME_BRIDGE_PORT"] = "9012"
@@ -22,7 +24,23 @@ from luna.game.bridge import GameBridge
 ALL_LEVELS = r"C:\Users\97550\Desktop\大鹅抓成语AI\assets\game2\level\all_levels.json"
 
 
+class _NoConfig:
+    """同 bridge_selftest：只要 config.get(*keys) 能取值，一律 None = 规则版。
+
+    heart_dir 指到临时目录：测试不读真人设，也保证不在仓库里写任何文件。
+    """
+
+    heart_dir = str(Path(tempfile.gettempdir()) / "luna_selftest_heart")
+
+    def get(self, *keys):
+        if keys == ("llm",):
+            return {"host": {"enabled": False, "heart_dir": self.heart_dir}}
+        return None
+
+
 class DummyHandle:
+    config = _NoConfig()
+
     def audio_synthesis_handle(self, data):
         print("[tts]", data.get("content", "")[:40])
 
@@ -87,7 +105,8 @@ async def main():
         cmd = await recv_json(ws, 10)
         assert cmd.get("op") == "retry_level", cmd
 
-    print("GAME2 BRIDGE OK")
+    # 必须 flush：下面 os._exit 直接走人，不刷缓冲区的话这行永远看不到
+    print("GAME2 BRIDGE OK", flush=True)
     os._exit(0)
 
 
