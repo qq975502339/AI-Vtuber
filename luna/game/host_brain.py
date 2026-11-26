@@ -2,6 +2,8 @@
 
 - 复用现有 Chatgpt / OpenAI 兼容配置
 - 游戏专用 system prompt，独立 session，避免和普通弹幕聊天串历史
+- **默认开启**（config.json 没有 llm.host 段也算开）；显式 "enabled": false 才关
+- 没配 API key 或初始化失败时自动关掉并回退模板台词，不会拖慢卡住直播
 - 2.5 秒超时、40 字截断、失败返回 None 由调用方回退模板
 """
 
@@ -10,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import traceback
 from copy import deepcopy
 from pathlib import Path
 
@@ -21,7 +24,9 @@ class HostBrain:
     def __init__(self, my_handle):
         self.my_handle = my_handle
         cfg = ((my_handle.config.get("llm") or {}).get("host") or {})
-        self.enabled = bool(cfg.get("enabled"))
+        # 默认开启：配置里没写 llm.host 段（老 config / 别人的机器）也当开，
+        # 要关就显式写 "enabled": false。
+        self.enabled = bool(cfg.get("enabled", True))
         self.timeout = float(cfg.get("timeout", 2.5))
         self.max_chars = int(cfg.get("max_chars", 40))
         self.max_tokens = int(cfg.get("max_tokens", 96))
@@ -43,10 +48,27 @@ class HostBrain:
         if not isinstance(openai_cfg.get("api_key"), list):
             openai_cfg["api_key"] = [openai_cfg["api_key"]] if openai_cfg.get("api_key") else []
 
+        # 默认开 = 没 key 也会走到这里。没 key 就当场关掉并说清楚：
+        # 否则每句话都要等一次 2.5 秒超时再回退模板，直播里听感是"卡"。
+        if not [k for k in (openai_cfg.get("api_key") or []) if str(k).strip()]:
+            logger.warning(
+                "[GAME_BRIDGE] 主播话术默认开启，但没有可用的 API key"
+                "（config.json → openai.api_key，或环境变量 DEEPSEEK_API_KEY），这次回退模板台词"
+            )
+            self.enabled = False
+            return
+
         chatgpt_cfg["preset"] = self.system_prompt or chatgpt_cfg.get("preset", "")
         chatgpt_cfg["max_tokens"] = self.max_tokens
         chatgpt_cfg["temperature"] = self.temperature
-        self.chat = Chatgpt(openai_cfg, chatgpt_cfg)
+        try:
+            self.chat = Chatgpt(openai_cfg, chatgpt_cfg)
+        except Exception:
+            # 初始化失败（配置形状不对等）不能把 GameBridge 一起带崩：
+            # main.py 里是 try/except 包着的，一崩就整场没有游戏桥。
+            logger.warning(f"[GAME_BRIDGE] 主播话术初始化失败，回退模板台词\n{traceback.format_exc()}")
+            self.enabled = False
+            return
         logger.info(
             f"[GAME_BRIDGE] LLM 主播话术已启用 model={chatgpt_cfg.get('model')} "
             f"timeout={self.timeout}s max_chars={self.max_chars}"
@@ -70,7 +92,6 @@ class HostBrain:
         event = context.get("event", "")
         pct = context.get("pct")
         lives = context.get("lives")
-        solo = context.get("solo")
         last = context.get("last") or []
         last_host = context.get("last_host") or []
         votes = context.get("votes") or {}
@@ -93,8 +114,6 @@ class HostBrain:
             parts.append("当前弹幕投票：" + "，".join(f"{u}投{v}" for u, v in votes.items()))
         if lives is not None:
             parts.append(f"剩余生命 {lives}")
-        if solo:
-            parts.append("这一关观众不参与，主播自己来；不要说“单人关”这三个字")
         if last:
             parts.append("最近弹幕：" + " / ".join(str(x) for x in last[-3:]))
         if last_host:
@@ -108,9 +127,6 @@ class HostBrain:
         elif event == "pick":
             pick = context.get("pick")
             parts.append(f"你选的是{pick}，必须说出{pick}，不要用“我选”")
-        elif event == "solo_pick":
-            char = context.get("char")
-            parts.append(f"这一关观众不参与，你自己来，必须说出{char}；不要说“单人关”这三个字，不要报“我选”")
         elif event == "text":
             char = context.get("char")
             parts.append(f"直接落字{char}，必须说出{char}")
@@ -127,8 +143,6 @@ class HostBrain:
         text = re.sub(r"[*#`>]", "", text)
         text = text.strip().strip('"“”')
         text = re.sub(r"\s+", " ", text).strip()
-        if "单人关" in text:
-            return None
         if text.startswith("我选") or text.startswith("这个直接给"):
             return None
         if len(text) > self.max_chars:

@@ -951,6 +951,18 @@ class Audio:
         voice_tmp_path = self.my_tts.openai_tts_api(data)
         return voice_tmp_path
 
+    async def _tts_qwen_tts(self, message):
+        """千问 / QwenCloud Token Plan 语音合成（qwen-audio-*-tts-*）。
+
+        合成是「同步 HTTP + 下载音频」，丢到线程池里跑，别在事件循环里阻塞
+        整条音频流水线（会让后面的弹幕全部排队）。
+        """
+        data = dict(message.get("data") or {})
+        data["content"] = message["content"]
+
+        voice_tmp_path = await asyncio.to_thread(self.my_tts.qwen_tts_api, data)
+        return voice_tmp_path
+
     async def _tts_gradio_tts(self, message):
         data = {"request_parameters": message["data"]["request_parameters"], "content": message["content"]}
 
@@ -1084,6 +1096,7 @@ class Audio:
         "bert_vits2": _tts_bert_vits2,
         "vits_fast": _tts_vits_fast,
         "edge-tts": _tts_edge_tts,
+        "qwen_tts": _tts_qwen_tts,
         "elevenlabs": _tts_elevenlabs,
         "openai_tts": _tts_openai_tts,
         "gradio_tts": _tts_gradio_tts,
@@ -1894,6 +1907,12 @@ class Audio:
 
             # 调用接口合成语音
             voice_tmp_path = await self.my_tts.edge_tts_api(data)
+
+        elif audio_synthesis_type == "qwen_tts":
+            data = {"content": content, "qwen_tts": self.config.get("qwen_tts")}
+
+            # 调用接口合成语音
+            voice_tmp_path = await asyncio.to_thread(self.my_tts.qwen_tts_api, data)
 
         elif audio_synthesis_type == "elevenlabs":
             return

@@ -40,6 +40,38 @@ TTS_ENABLE = os.environ.get("GAME_BRIDGE_TTS", "1") != "0"
 SKIP_3PLUS2 = os.environ.get("GAME_BRIDGE_SKIP_3PLUS2", "0") == "1"
 TTS_WAIT_LIMIT = float(os.environ.get("GAME_BRIDGE_TTS_WAIT", "120"))
 
+# 违禁词自动机缓存：check_sensitive_words2 每次调用都会重读 1.3MB 词库并重建
+# Aho-Corasick（实测 75ms/次），游戏模式每条弹幕都过一遍会明显拖慢投票，
+# 所以这里按「路径 + 修改时间」缓存一份，词库改了才重建。
+_BADWORD_CACHE: dict = {"path": None, "mtime": 0.0, "automaton": None}
+
+
+def _badword_automaton(path: str):
+    if not path:
+        return None
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    if (_BADWORD_CACHE["path"] == path
+            and abs(_BADWORD_CACHE["mtime"] - mtime) < 1e-6
+            and _BADWORD_CACHE["automaton"] is not None):
+        return _BADWORD_CACHE["automaton"]
+    try:
+        import ahocorasick
+
+        with open(path, encoding="utf-8") as f:
+            words = [w.strip() for w in f if w.strip()]
+        automaton = ahocorasick.Automaton()
+        for word in words:
+            automaton.add_word(word, word)
+        automaton.make_automaton()
+    except Exception:
+        logger.warning(f"[GAME_BRIDGE] 违禁词库加载失败：{path}\n{traceback.format_exc()}")
+        return None
+    _BADWORD_CACHE.update(path=path, mtime=mtime, automaton=automaton)
+    return automaton
+
 
 class GameBridge:
     def __init__(self, my_handle):
@@ -71,9 +103,6 @@ class GameBridge:
         self.filler_last = 0.0
         self.filler_last_say = ""
         self.idle_task: asyncio.Task | None = None
-        self.fail_streak: dict[int, int] = {}
-        self.solo_level: int | None = None
-        self.solo_announced = False
 
         self.window_open = False
         self.window_pool: set[str] = set()
@@ -199,17 +228,10 @@ class GameBridge:
             self.last_state_seq = 0
             self.last_level = level
             self.recent_comments.clear()
-            self.solo_announced = False
             await self._host_say(
                 f"第{level}关，五个图，老规矩。",
                 {"game": "game1", "level": level, "event": "level_start"},
             )
-            if self.solo_level == level:
-                await self._host_say(
-                    "行，这关我自己来，弹幕先歇着。",
-                    {"game": "game1", "level": level, "event": "solo_start", "solo": True},
-                )
-                self.solo_announced = True
         if seq <= self.last_state_seq:
             return
         self.last_state_seq = int(seq)
@@ -240,22 +262,7 @@ class GameBridge:
 
         logger.info(f"[GAME_BRIDGE] state {level}-{item} slot={slot} type={element_type} char={char}")
         if element_type == "image":
-            if self.solo_level == level:
-                # 单人关：不弹观众窗口，主播直接选
-                solo_line = self._choose_fmt([
-                    "第{slot}个，{char}，这把我自己来。",
-                    "{char}，就它了。",
-                    "{char}，稳。",
-                ], key="g1solo", slot=slot + 1, char=char)
-                await self._host_say(
-                    solo_line,
-                    {"game": "game1", "level": level, "event": "solo_pick", "char": char,
-                     "slot": slot + 1, "solo": True, "required": [char]},
-                    wait=True,
-                )
-                await self._send_action(int(seq), char, slot)
-            else:
-                await self._guess_image(state, slot, char)
+            await self._guess_image(state, slot, char)
         else:
             text_line = self._choose_fmt([
                 "这个不绕，直接{char}。",
@@ -538,10 +545,6 @@ class GameBridge:
             return
         if name == "level_clear":
             self.last_state_seq = 0
-            self.fail_streak[level] = 0
-            if self.solo_level == level:
-                self.solo_level = None
-                self.solo_announced = False
             await self._host_say(
                 "过了，下一关。",
                 {"game": "game1", "level": level, "event": "level_clear"},
@@ -551,19 +554,6 @@ class GameBridge:
             return
         if name == "level_fail":
             self.last_state_seq = 0
-            self.fail_streak[level] = self.fail_streak.get(level, 0) + 1
-            if self.fail_streak[level] >= 2:
-                # 同一关连败 2 次：不再重玩，进下一关并改成主播单人
-                self.fail_streak[level] = 0
-                self.solo_level = level + 1
-                self.solo_announced = False
-                await self._host_say(
-                    "行吧，连跪两把，下关我自己来。",
-                    {"game": "game1", "level": level, "event": "solo_next"},
-                )
-                await asyncio.sleep(0.5)
-                await self._send_command("next_level")
-                return
             await self._host_say(
                 "哎，这关没过，再来。",
                 {"game": "game1", "level": level, "event": "fail"},
@@ -573,9 +563,6 @@ class GameBridge:
             return
         if name == "all_clear":
             self.last_state_seq = 0
-            self.fail_streak.clear()
-            self.solo_level = None
-            self.solo_announced = False
             await self._host_say(
                 "全通了，收工。",
                 {"game": "game1", "event": "all_clear"},
@@ -748,11 +735,56 @@ class GameBridge:
         await asyncio.sleep(0.4)
 
     # ---------- 弹幕 ----------
+    def _blocked_content(self, content: str) -> bool:
+        """命中违禁规则 → 这条弹幕直接丢弃（不进上下文、不计票）。
+
+        规则与 luna/core/filters.prohibitions_handle 一致：链接 / 脏话库 /
+        本地违禁词 / 同音违禁词。区别是这里**一律丢弃**，不像正常流水线那样
+        把词替换成 *——游戏模式没有念稿环节，带 * 的句子留着只会污染 LLM 上下文。
+        """
+        if not content:
+            return False
+        try:
+            handle = self.my_handle
+            if handle is None:
+                return False
+            cfg = handle.config
+            common = getattr(handle, "common", None)
+
+            if common is not None and common.is_url_check(content):
+                logger.info(f"[GAME_BRIDGE] 含链接，丢弃：{content[:30]}")
+                return True
+
+            if cfg.get("filter", "badwords", "enable"):
+                if common is not None and common.profanity_content(content):
+                    logger.info(f"[GAME_BRIDGE] 命中脏话库，丢弃：{content[:20]}")
+                    return True
+
+                matched = _badword_automaton(cfg.get("filter", "badwords", "path"))
+                if matched is not None:
+                    hit = next(matched.iter(content), None)
+                    if hit is not None:
+                        logger.info(f"[GAME_BRIDGE] 命中违禁词「{hit[1]}」，丢弃：{content[:20]}")
+                        return True
+
+                pinyin_path = cfg.get("filter", "badwords", "bad_pinyin_path")
+                if pinyin_path and common is not None and common.check_sensitive_words3(pinyin_path, content):
+                    logger.info(f"[GAME_BRIDGE] 命中同音违禁词，丢弃：{content[:20]}")
+                    return True
+        except Exception:
+            logger.warning(f"[GAME_BRIDGE] 违禁词检查异常\n{traceback.format_exc()}")
+        return False
+
     def on_comment(self, data: dict) -> bool:
         """由 My_handle 的弹幕流水线调用；返回 True 表示游戏模式接管这条弹幕。"""
         if not self.active:
             return False
         content = str(data.get("content", ""))
+        # 游戏模式是在 my_handle 的过滤链**之前**接管弹幕的（badwords/违禁词都会被跳过），
+        # 所以这里自己再过一遍：命中的直接丢掉——不进主播上下文（防 LLM 复述被 TTS 念出来），
+        # 也不计票（脏话本来也投不了票）。
+        if self._blocked_content(content):
+            return True
         chars = re.findall(r"[\u4e00-\u9fff]", content)
         user = str(data.get("username") or "unknown")
         self.recent_comments.append(f"{user}：{content}")

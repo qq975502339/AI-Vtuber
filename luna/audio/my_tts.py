@@ -408,6 +408,156 @@ class MY_TTS:
             logger.error(f"OpenAI_TTS请求失败: {e}")
             return None
 
+    # ── 千问 / QwenCloud Token Plan 语音合成 ──
+    def qwen_tts_api(self, data):
+        """QwenCloud Token Plan（qwen-audio-*-tts-*）语音合成。
+
+        接口形状（Token Plan 文档）：
+            POST {base_url}/api/v1/services/audio/tts/SpeechSynthesizer
+            Authorization: Bearer <api_key>
+            {"model": ..., "input": {"text": ..., "voice": ..., "language_type": ...}}
+        响应里给的是音频 URL（不同版本字段位置不一致），下载到本地后返回路径。
+
+        data 两种形状都认：
+          · config.json 里的 qwen_tts 段本身（含 content）
+          · {"content": ..., "qwen_tts": {...段...}}（对齐 edge-tts 的调用风格）
+
+        注意 voice：这个模型的音色名是小写、不带下划线/后缀，
+        例如 longanlingxin（龙安灵心）。CosyVoice 的 longxiaochun、Qwen3-TTS 的
+        Cherry 这类名字会直接 411 Engine error。
+        """
+        try:
+            import base64
+            import re
+
+            import requests
+
+            cfg = data.get("qwen_tts") or data
+            content = str(data.get("content") or cfg.get("content") or "").strip()
+            if not content:
+                logger.error("Qwen_TTS 文本为空，跳过合成")
+                return None
+
+            api_key = str(cfg.get("api_key") or "").strip()
+            if not api_key:
+                logger.error("Qwen_TTS 没配 api_key（config.json → qwen_tts.api_key）")
+                return None
+
+            base_url = str(cfg.get("base_url") or "https://token-plan.maas.qianwenaiapi.com").rstrip("/")
+            url = base_url + "/api/v1/services/audio/tts/SpeechSynthesizer"
+            payload = {
+                "model": cfg.get("model") or "qwen-audio-3.0-tts-plus",
+                "input": {
+                    "text": content,
+                    "voice": cfg.get("voice") or "longanlingxin",
+                    # 指定语种比 Auto 更稳（Auto 在多语混排时发音会飘）
+                    "language_type": cfg.get("language_type") or "Chinese",
+                },
+            }
+            if cfg.get("format"):
+                payload["parameters"] = {"format": cfg["format"]}
+
+            session = requests.Session()
+            proxy = str(cfg.get("proxy") or "").strip()
+            if proxy:
+                session.proxies = {"http": proxy, "https": proxy}
+            else:
+                # 默认直连：Windows 上的系统代理常写成 https://127.0.0.1:port（应为 http://），
+                # 会让发往本机代理的 TLS 握手直接失败（SSLEOFError）。要代理请显式填 qwen_tts.proxy。
+                session.trust_env = False
+
+            resp = session.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=float(cfg.get("timeout") or 60),
+            )
+            if resp.status_code != 200:
+                logger.error(f"Qwen_TTS 请求失败 HTTP {resp.status_code}: {resp.text[:300]}")
+                return None
+
+            try:
+                body = resp.json()
+            except Exception:
+                logger.error(f"Qwen_TTS 返回不是 JSON: {resp.text[:300]}")
+                return None
+
+            audio_url = self._find_audio_url(body)
+            if audio_url:
+                audio_bytes = session.get(audio_url, timeout=float(cfg.get("timeout") or 60)).content
+                ext = os.path.splitext(audio_url.split("?")[0])[1].lower() or ".wav"
+            else:
+                b64 = self._find_audio_b64(body)
+                if not b64:
+                    logger.error(f"Qwen_TTS 响应里没找到音频（url/data）: {str(body)[:300]}")
+                    return None
+                audio_bytes = base64.b64decode(b64)
+                ext = "." + str(cfg.get("format") or "wav").lower().lstrip(".")
+
+            if not audio_bytes:
+                logger.error("Qwen_TTS 拿到的音频是空的")
+                return None
+
+            ext = re.sub(r"[^a-z0-9.]", "", ext) or ".wav"
+            file_name = "qwen_tts_" + self.common.get_bj_time(4) + ext
+            voice_tmp_path = self.common.get_new_audio_path(self.audio_out_path, file_name)
+            with open(voice_tmp_path, "wb") as f:
+                f.write(audio_bytes)
+            logger.info(f"[qwen_tts] 合成完成 {len(audio_bytes)} 字节 → {voice_tmp_path}")
+            return voice_tmp_path
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            logger.error(f"Qwen_TTS请求失败: {e}")
+            return None
+
+    @staticmethod
+    def _find_audio_url(obj, depth=0):
+        """在响应 JSON 里找音频地址（字段名各版本不同，递归找第一个 http 音频链接）。"""
+        if depth > 6:
+            return None
+        if isinstance(obj, str):
+            low = obj.split("?")[0].lower()
+            if obj.startswith("http") and low.endswith((".wav", ".mp3", ".ogg", ".m4a", ".aac")):
+                return obj
+            return None
+        if isinstance(obj, dict):
+            for key in ("url", "audio_url", "audio", "file_url"):
+                val = obj.get(key)
+                if isinstance(val, str) and val.startswith("http") and "." in val.split("?")[0][-6:]:
+                    return val
+            for val in obj.values():
+                got = MY_TTS._find_audio_url(val, depth + 1)
+                if got:
+                    return got
+        if isinstance(obj, list):
+            for val in obj:
+                got = MY_TTS._find_audio_url(val, depth + 1)
+                if got:
+                    return got
+        return None
+
+    @staticmethod
+    def _find_audio_b64(obj, depth=0):
+        """兜底：有些返回直接给 base64 音频。找最长的、看起来像 base64 的字符串。"""
+        if depth > 6:
+            return None
+        found = []
+        if isinstance(obj, dict):
+            for key in ("data", "audio", "audio_data", "b64"):
+                val = obj.get(key)
+                if isinstance(val, str) and len(val) > 256:
+                    found.append(val)
+            for val in obj.values():
+                got = MY_TTS._find_audio_b64(val, depth + 1)
+                if got:
+                    found.append(got)
+        elif isinstance(obj, list):
+            for val in obj:
+                got = MY_TTS._find_audio_b64(val, depth + 1)
+                if got:
+                    found.append(got)
+        return max(found, key=len) if found else None
+
     # 请求gradio的api
     def gradio_tts_api(self, data):
         def get_value_by_index(response, index):
