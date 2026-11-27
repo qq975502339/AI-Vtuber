@@ -708,8 +708,8 @@ class Audio:
                     self.data_priority_insert("等待合成消息", data_json)
                 return
 
-            # 是否语句切分
-            if self.config.get("play_audio", "text_split_enable"):
+            # 是否语句切分（游戏主播口播本就是短句，不切碎以避免逗号硬停顿并保留完整情绪韵律）
+            if self.config.get("play_audio", "text_split_enable") and message.get("type") != "game_host":
                 sentences = self.common.split_sentences(message["content"])
                 for s in sentences:
                     message_copy = deepcopy(message)  # 创建 message 的副本
@@ -952,15 +952,29 @@ class Audio:
         return voice_tmp_path
 
     async def _tts_qwen_tts(self, message):
-        """千问 / QwenCloud Token Plan 语音合成（qwen-audio-*-tts-*）。
+        """千问 / 阿里云百炼 Token Plan 情绪化语音合成（CosyVoice / Qwen-Audio-TTS）。
 
         合成是「同步 HTTP + 下载音频」，丢到线程池里跑，别在事件循环里阻塞
         整条音频流水线（会让后面的弹幕全部排队）。
+        支持透传单句动态情绪指令（tts_instruction）与语速（tts_rate），失败时可自动回退 edge-tts。
         """
         data = dict(message.get("data") or {})
         data["content"] = message["content"]
+        if message.get("tts_instruction"):
+            data["instruction"] = message["tts_instruction"]
+        if message.get("tts_rate") is not None:
+            data["rate"] = message["tts_rate"]
+        if message.get("tts_pitch") is not None:
+            data["pitch"] = message["tts_pitch"]
 
         voice_tmp_path = await asyncio.to_thread(self.my_tts.qwen_tts_api, data)
+        if not voice_tmp_path and data.get("fallback_to_edge_tts", True):
+            edge_cfg = self.config.get("edge-tts")
+            if edge_cfg:
+                logger.warning("[qwen_tts] 合成失败或未配 API Key，自动回退 edge-tts 保底播报")
+                voice_tmp_path = await self.my_tts.edge_tts_api(
+                    {"content": message["content"], "edge-tts": edge_cfg}
+                )
         return voice_tmp_path
 
     async def _tts_gradio_tts(self, message):
@@ -1378,17 +1392,21 @@ class Audio:
                                     self.config.get("luoxi_project", "Live_Comment_Assistant"), data_json["content"]
                                 )
 
-                    normal_interval_min = self.config.get("play_audio", "normal_interval_min")
-                    normal_interval_max = self.config.get("play_audio", "normal_interval_max")
-                    normal_interval = self.common.get_random_value(normal_interval_min, normal_interval_max)
+                    if data_json.get("type") == "game_host":
+                        # 游戏主播口播需要紧跟节奏，跳过 0.3~1.0s 的人工句间空白
+                        await asyncio.sleep(0.05)
+                    else:
+                        normal_interval_min = self.config.get("play_audio", "normal_interval_min")
+                        normal_interval_max = self.config.get("play_audio", "normal_interval_max")
+                        normal_interval = self.common.get_random_value(normal_interval_min, normal_interval_max)
 
-                    interval_num_min = float(self.config.get("play_audio", "interval_num_min"))
-                    interval_num_max = float(self.config.get("play_audio", "interval_num_max"))
-                    interval_num = int(self.common.get_random_value(interval_num_min, interval_num_max))
+                        interval_num_min = float(self.config.get("play_audio", "interval_num_min"))
+                        interval_num_max = float(self.config.get("play_audio", "interval_num_max"))
+                        interval_num = int(self.common.get_random_value(interval_num_min, interval_num_max))
 
-                    for _ in range(interval_num):
-                        # 不仅仅是说话间隔，还是等待文本捕获刷新数据
-                        await asyncio.sleep(normal_interval)
+                        for _ in range(interval_num):
+                            # 不仅仅是说话间隔，还是等待文本捕获刷新数据
+                            await asyncio.sleep(normal_interval)
 
                     # 音频变速
                     random_speed = 1

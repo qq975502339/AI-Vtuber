@@ -408,23 +408,19 @@ class MY_TTS:
             logger.error(f"OpenAI_TTS请求失败: {e}")
             return None
 
-    # ── 千问 / QwenCloud Token Plan 语音合成 ──
+    # ── 千问 / 阿里云百炼 Token Plan 语音合成（支持情绪化 CosyVoice 与 Qwen-Audio-TTS） ──
     def qwen_tts_api(self, data):
-        """QwenCloud Token Plan（qwen-audio-*-tts-*）语音合成。
+        """千问 / 阿里云百炼 Token Plan 语音合成（cosyvoice-v3-flash / qwen-audio-*-tts-*）。
 
-        接口形状（Token Plan 文档）：
+        接口形状：
             POST {base_url}/api/v1/services/audio/tts/SpeechSynthesizer
             Authorization: Bearer <api_key>
-            {"model": ..., "input": {"text": ..., "voice": ..., "language_type": ...}}
-        响应里给的是音频 URL（不同版本字段位置不一致），下载到本地后返回路径。
 
-        data 两种形状都认：
-          · config.json 里的 qwen_tts 段本身（含 content）
-          · {"content": ..., "qwen_tts": {...段...}}（对齐 edge-tts 的调用风格）
-
-        注意 voice：这个模型的音色名是小写、不带下划线/后缀，
-        例如 longanlingxin（龙安灵心）。CosyVoice 的 longxiaochun、Qwen3-TTS 的
-        Cherry 这类名字会直接 411 Engine error。
+        支持情绪控制（instruction）：
+          · 可在 config.json -> qwen_tts.instruction 配置默认情绪指令
+          · 也可在单条消息里动态传入 instruction（如 GameBridge 按主播实时情绪切换
+            happy / surprised / angry / sad / neutral）
+        支持三种响应形态：直出二进制音频（audio/*）、JSON 音频 URL、JSON base64。
         """
         try:
             import base64
@@ -432,30 +428,85 @@ class MY_TTS:
 
             import requests
 
-            cfg = data.get("qwen_tts") or data
+            cfg = dict(data.get("qwen_tts") or data)
             content = str(data.get("content") or cfg.get("content") or "").strip()
             if not content:
                 logger.error("Qwen_TTS 文本为空，跳过合成")
                 return None
 
-            api_key = str(cfg.get("api_key") or "").strip()
+            api_key = str(
+                cfg.get("api_key")
+                or os.environ.get("QWEN_TTS_API_KEY")
+                or os.environ.get("DASHSCOPE_API_KEY")
+                or ""
+            ).strip()
             if not api_key:
-                logger.error("Qwen_TTS 没配 api_key（config.json → qwen_tts.api_key）")
+                logger.warning(
+                    "Qwen_TTS 没配 api_key（config.json → qwen_tts.api_key，"
+                    "或环境变量 QWEN_TTS_API_KEY / DASHSCOPE_API_KEY）"
+                )
                 return None
 
-            base_url = str(cfg.get("base_url") or "https://token-plan.maas.qianwenaiapi.com").rstrip("/")
-            url = base_url + "/api/v1/services/audio/tts/SpeechSynthesizer"
-            payload = {
-                "model": cfg.get("model") or "qwen-audio-3.0-tts-plus",
-                "input": {
+            base_url = str(cfg.get("base_url") or "https://token-plan.cn-beijing.maas.aliyuncs.com").rstrip("/")
+            if base_url.endswith("/api/v1/services/audio/tts/SpeechSynthesizer"):
+                url = base_url
+            else:
+                url = base_url + "/api/v1/services/audio/tts/SpeechSynthesizer"
+
+            model = str(cfg.get("model") or "cosyvoice-v3-flash").strip()
+            is_cosyvoice = model.lower().startswith("cosyvoice")
+            default_voice = "longanhuan" if is_cosyvoice else "longanlingxin"
+            voice = str(data.get("voice") or cfg.get("voice") or default_voice).strip()
+            instruction = str(
+                data.get("instruction") if data.get("instruction") is not None else (cfg.get("instruction") or "")
+            ).strip()
+            fmt = str(data.get("format") or cfg.get("format") or ("mp3" if is_cosyvoice else "wav")).strip().lower()
+
+            def _pick_opt(key):
+                v = data.get(key)
+                if v is not None and v != "":
+                    return v
+                v = cfg.get(key)
+                if v is not None and v != "":
+                    return v
+                return None
+
+            def _build_payload(include_instruction: bool) -> dict:
+                if is_cosyvoice:
+                    input_obj = {
+                        "text": content,
+                        "voice": voice,
+                        "format": fmt,
+                    }
+                    if include_instruction and instruction:
+                        input_obj["instruction"] = instruction
+                    for opt_key in ("sample_rate", "volume", "rate", "pitch", "seed"):
+                        val = _pick_opt(opt_key)
+                        if val is not None:
+                            input_obj[opt_key] = val
+                    if cfg.get("language_type"):
+                        input_obj["language_type"] = cfg["language_type"]
+                    return {"model": model, "input": input_obj}
+
+                # Qwen-Audio-TTS 兼容形态
+                input_obj = {
                     "text": content,
-                    "voice": cfg.get("voice") or "longanlingxin",
-                    # 指定语种比 Auto 更稳（Auto 在多语混排时发音会飘）
+                    "voice": voice,
                     "language_type": cfg.get("language_type") or "Chinese",
-                },
-            }
-            if cfg.get("format"):
-                payload["parameters"] = {"format": cfg["format"]}
+                }
+                params_obj = {}
+                if fmt:
+                    params_obj["format"] = fmt
+                if include_instruction and instruction:
+                    params_obj["instruction"] = instruction
+                for opt_key in ("sample_rate", "volume", "rate", "pitch", "seed"):
+                    val = _pick_opt(opt_key)
+                    if val is not None:
+                        params_obj[opt_key] = val
+                res = {"model": model, "input": input_obj}
+                if params_obj:
+                    res["parameters"] = params_obj
+                return res
 
             session = requests.Session()
             proxy = str(cfg.get("proxy") or "").strip()
@@ -466,44 +517,66 @@ class MY_TTS:
                 # 会让发往本机代理的 TLS 握手直接失败（SSLEOFError）。要代理请显式填 qwen_tts.proxy。
                 session.trust_env = False
 
-            resp = session.post(
-                url,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=payload,
-                timeout=float(cfg.get("timeout") or 60),
-            )
+            timeout = float(cfg.get("timeout") or 30)
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            payload = _build_payload(include_instruction=bool(instruction))
+            resp = session.post(url, headers=headers, json=payload, timeout=timeout)
+
+            # 若音色/网关不支持 instruction 返回 400/422，自动去掉 instruction 重试一次保底
+            if resp.status_code in (400, 422) and instruction:
+                logger.warning(
+                    f"[qwen_tts] 带情绪指令请求返回 HTTP {resp.status_code}，去掉 instruction 重试: {resp.text[:200]}"
+                )
+                payload = _build_payload(include_instruction=False)
+                resp = session.post(url, headers=headers, json=payload, timeout=timeout)
+
             if resp.status_code != 200:
                 logger.error(f"Qwen_TTS 请求失败 HTTP {resp.status_code}: {resp.text[:300]}")
                 return None
 
-            try:
-                body = resp.json()
-            except Exception:
-                logger.error(f"Qwen_TTS 返回不是 JSON: {resp.text[:300]}")
-                return None
+            content_type = str(resp.headers.get("content-type") or "").lower()
+            audio_bytes = b""
+            ext = "." + fmt.lstrip(".")
 
-            audio_url = self._find_audio_url(body)
-            if audio_url:
-                audio_bytes = session.get(audio_url, timeout=float(cfg.get("timeout") or 60)).content
-                ext = os.path.splitext(audio_url.split("?")[0])[1].lower() or ".wav"
+            if content_type.startswith("audio/") or content_type.startswith("application/octet-stream"):
+                audio_bytes = resp.content
+                if "mpeg" in content_type or "mp3" in content_type:
+                    ext = ".mp3"
+                elif "wav" in content_type:
+                    ext = ".wav"
+                elif "ogg" in content_type or "opus" in content_type:
+                    ext = ".ogg"
             else:
-                b64 = self._find_audio_b64(body)
-                if not b64:
-                    logger.error(f"Qwen_TTS 响应里没找到音频（url/data）: {str(body)[:300]}")
+                try:
+                    body = resp.json()
+                except Exception:
+                    logger.error(f"Qwen_TTS 返回不是 JSON 且非音频流: {resp.text[:300]}")
                     return None
-                audio_bytes = base64.b64decode(b64)
-                ext = "." + str(cfg.get("format") or "wav").lower().lstrip(".")
+
+                audio_url = self._find_audio_url(body)
+                if audio_url:
+                    audio_bytes = session.get(audio_url, timeout=timeout).content
+                    ext = os.path.splitext(audio_url.split("?")[0])[1].lower() or ext
+                else:
+                    b64 = self._find_audio_b64(body)
+                    if not b64:
+                        logger.error(f"Qwen_TTS 响应里没找到音频（url/data）: {str(body)[:300]}")
+                        return None
+                    audio_bytes = base64.b64decode(b64)
 
             if not audio_bytes:
                 logger.error("Qwen_TTS 拿到的音频是空的")
                 return None
 
-            ext = re.sub(r"[^a-z0-9.]", "", ext) or ".wav"
+            ext = re.sub(r"[^a-z0-9.]", "", ext) or ".mp3"
             file_name = "qwen_tts_" + self.common.get_bj_time(4) + ext
             voice_tmp_path = self.common.get_new_audio_path(self.audio_out_path, file_name)
             with open(voice_tmp_path, "wb") as f:
                 f.write(audio_bytes)
-            logger.info(f"[qwen_tts] 合成完成 {len(audio_bytes)} 字节 → {voice_tmp_path}")
+            logger.info(
+                f"[qwen_tts] 合成完成 model={model} voice={voice} "
+                f"inst={instruction or '-'} {len(audio_bytes)} 字节 → {voice_tmp_path}"
+            )
             return voice_tmp_path
         except Exception as e:
             logger.error(traceback.format_exc())

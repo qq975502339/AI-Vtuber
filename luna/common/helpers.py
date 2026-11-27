@@ -55,7 +55,14 @@ class Common:
         return text.isdigit()
 
     # 是否是url
+    _EMBEDDED_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+    _PINYIN_WORDS_CACHE: dict = {}
+
     def is_url_check(self, url):
+        if not isinstance(url, str) or not url:
+            return False
+        if self._EMBEDDED_URL_RE.search(url):
+            return True
         try:
             result = urlparse(url)
             return all([result.scheme, result.netloc])
@@ -379,17 +386,39 @@ class Common:
         return None
 
     # 本地敏感词转拼音检测 传入敏感词库文件路径和待检查的文本
-    def check_sensitive_words3(self, file_path, text):
+    def _load_pinyin_patterns(self, file_path):
+        try:
+            mtime = os.path.getmtime(file_path)
+        except OSError:
+            return []
+        cached = self._PINYIN_WORDS_CACHE.get(file_path)
+        if cached is not None and abs(cached[0] - mtime) < 1e-6:
+            return cached[1]
+
         with open(file_path, encoding="utf-8") as file:
-            sensitive_words = [line.strip() for line in file.readlines()]
+            sensitive_words = [line.strip() for line in file if line.strip()]
+
+        patterns = []
+        for word in sensitive_words:
+            pinyin_word = self.text2pinyin(word).strip()
+            if not pinyin_word:
+                continue
+            patterns.append((pinyin_word, re.compile(r"\b" + re.escape(pinyin_word) + r"\b")))
+        self._PINYIN_WORDS_CACHE[file_path] = (mtime, patterns)
+        return patterns
+
+    def check_sensitive_words3(self, file_path, text):
+        if not file_path or not text:
+            return False
+        patterns = self._load_pinyin_patterns(file_path)
+        if not patterns:
+            return False
 
         pinyin_text = self.text2pinyin(text)
         # logger.info(f"pinyin_text={pinyin_text}")
 
-        for word in sensitive_words:
-            pinyin_word = self.text2pinyin(word)
-            pattern = r"\b" + re.escape(pinyin_word) + r"\b"
-            if re.search(pattern, pinyin_text):
+        for pinyin_word, pattern in patterns:
+            if pattern.search(pinyin_text):
                 logger.warning(f"同音违禁拼音：{pinyin_word}")
                 return True
 

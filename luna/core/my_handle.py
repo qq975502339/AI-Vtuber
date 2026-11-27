@@ -2453,11 +2453,14 @@ class My_handle(metaclass=SingletonMeta):
             # 输出当前用户发送的弹幕消息
             logger.debug(f"[{username}]: {content}")
 
-            # 游戏模式：弹幕交给 GameBridge（投票），默认回复让路
+            # 游戏模式：先过黑名单，再交给 GameBridge（投票），默认回复让路
             if is_comment:
                 game_bridge = getattr(self, "game_bridge", None)
-                if game_bridge is not None and game_bridge.on_comment(data):
-                    return None
+                if game_bridge is not None and getattr(game_bridge, "active", False):
+                    if self.blacklist_handle(data):
+                        return None
+                    if game_bridge.on_comment(data):
+                        return None
 
             # 限定时间数据去重（仅弹幕）
             if is_comment and self.is_data_repeat_in_limited_time("comment", data):
@@ -3386,12 +3389,19 @@ class My_handle(metaclass=SingletonMeta):
     """
 
     def process_data(self, data, timer_flag):
-        # 游戏模式：弹幕在进入定时器/长度/黑名单过滤前直接交给 GameBridge，
-        # 否则单字投票（如“京”）会被过滤器丢掉，桥只能看到长评论。
-        if timer_flag == "comment":
-            game_bridge = getattr(self, "game_bridge", None)
-            if game_bridge is not None and game_bridge.on_comment(data):
-                return
+        # 游戏模式：先过黑名单，再拦截 comment 与 entrance/follow/gift；
+        # 避免单字投票被长度过滤丢弃，同时防止抖音高频进场/礼物播报塞爆公共播放队列导致游戏超时。
+        game_bridge = getattr(self, "game_bridge", None)
+        if game_bridge is not None and getattr(game_bridge, "active", False):
+            if timer_flag == "comment":
+                if self.blacklist_handle(data):
+                    return
+                if game_bridge.on_comment(data):
+                    return
+            elif timer_flag in ("entrance", "follow", "gift"):
+                on_room_event = getattr(game_bridge, "on_room_event", None)
+                if callable(on_room_event) and on_room_event(timer_flag, data):
+                    return
 
         with self.data_lock:
             if timer_flag not in self.timers or not self.timers[timer_flag].is_alive():

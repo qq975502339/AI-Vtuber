@@ -49,7 +49,6 @@ async def recv_json(ws, timeout=12):
 
 async def main():
     bridge = GameBridge(DummyHandle())
-    bridge.plans[1] = {"meaning": {0}, "origin": {0}}
     bridge.start()
     await asyncio.sleep(0.8)
 
@@ -98,10 +97,7 @@ async def main():
         await ws.send(json.dumps({"type": "ack", "seq": action["seq"], "stateSeq": 4, "result": "correct"}))
 
         await ws.send(json.dumps({"type": "event", "v": 2, "event": "question_clear", "levelId": 1, "itemIndex": 0}))
-        first = await recv_json(ws, 10)
-        second = await recv_json(ws, 10)
-        ops = {first.get("op"), second.get("op")}
-        assert first["type"] == second["type"] == "cmd" and ops == {"pause", "resume"}, (first, second)
+        await asyncio.sleep(0.2)
 
         await ws.send(json.dumps({"type": "event", "v": 2, "event": "level_clear", "levelId": 1, "nextLevelId": 2}))
         cmd = await recv_json(ws, 10)

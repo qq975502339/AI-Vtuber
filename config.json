@@ -461,7 +461,7 @@
       "similarity": 0.5
     }
   },
-  "audio_synthesis_type": "edge-tts",
+  "audio_synthesis_type": "qwen_tts",
   "audio_random_speed": {
     "normal": {
       "enable": false,
@@ -552,9 +552,24 @@
   },
   "edge-tts": {
     "voice": "zh-CN-XiaoyiNeural",
-    "rate": "+0%",
+    "rate": "+10%",
     "volume": "+0%",
     "proxy": ""
+  },
+  "qwen_tts": {
+    "api_key": "",
+    "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com",
+    "model": "cosyvoice-v3-flash",
+    "voice": "longanhuan",
+    "instruction": "你说话的情感是happy。",
+    "format": "mp3",
+    "sample_rate": 22050,
+    "rate": 1.08,
+    "pitch": 1.0,
+    "volume": 55,
+    "timeout": 20,
+    "proxy": "",
+    "fallback_to_edge_tts": true
   },
   "elevenlabs": {
     "api_key": "",
@@ -1780,6 +1795,7 @@
       },
       "tts": {
         "edge-tts": true,
+        "qwen_tts": true,
         "vits": true,
         "bert_vits2": true,
         "elevenlabs": true,

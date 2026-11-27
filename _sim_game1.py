@@ -1,8 +1,8 @@
-"""模拟 Game1 客户端：连 Luna 9001，跑一题 4 个图片元素 + 3+2 + next/retry。
+"""模拟 Game1 客户端：连 Luna 9001，跑一题 4 个图片元素 + next/retry。
 
 - 每个图片窗口用两个用户 /send 正确答案
 - 4 个元素后发 question_clear
-- 验证 action、pause/resume、next_level、retry_level
+- 验证 action、next_level、retry_level
 """
 
 import asyncio
@@ -80,18 +80,16 @@ async def main():
                     }))
                     break
 
-        # 触发 Q1~Q4 的讲解；item 4(Q5) 不触发
+        # 触发 Q1~Q4 过题事件后直接进入 level_clear
         for item in range(4):
             await ws.send(json.dumps({"type": "event", "v": 2, "event": "question_clear", "levelId": 1, "itemIndex": item}))
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
 
-        # 讲解事件之后立刻发 level_clear，桥会先处理完 4 个讲解再 next
         await ws.send(json.dumps({"type": "event", "v": 2, "event": "level_clear", "levelId": 1, "nextLevelId": 2}))
 
-        # 等讲解完成：统计 pause/resume；看到 next_level 或 timeout
-        end = asyncio.get_event_loop().time() + 150
+        end = asyncio.get_event_loop().time() + 60
         while asyncio.get_event_loop().time() < end:
-            msg = await recv(ws, 120)
+            msg = await recv(ws, 30)
             print("event-loop", msg, flush=True)
             if msg.get("type") == "cmd":
                 if msg.get("op") == "pause":
@@ -110,7 +108,7 @@ async def main():
         retry_seen = msg.get("type") == "cmd" and msg.get("op") == "retry_level"
 
     print("pauses", pauses, "resumes", resumes, "next", next_seen, "retry", retry_seen, flush=True)
-    if pauses >= 1 and resumes >= 1 and next_seen and retry_seen:
+    if pauses == 0 and resumes == 0 and next_seen and retry_seen:
         print("GAME1 SIM FULL OK", flush=True)
     else:
         print("GAME1 SIM PARTIAL", flush=True)
